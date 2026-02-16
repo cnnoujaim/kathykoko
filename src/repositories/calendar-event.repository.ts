@@ -130,6 +130,29 @@ export class CalendarEventRepository {
   }
 
   /**
+   * Search events by title (fuzzy ILIKE match) across all accounts
+   */
+  async findByTitleLike(search: string, startDate?: Date, endDate?: Date, limit: number = 5): Promise<CalendarEvent[]> {
+    let query = `SELECT * FROM calendar_events WHERE title ILIKE $1`;
+    const params: any[] = [`%${search}%`];
+
+    if (startDate) {
+      params.push(startDate);
+      query += ` AND start_time >= $${params.length}`;
+    }
+    if (endDate) {
+      params.push(endDate);
+      query += ` AND end_time <= $${params.length}`;
+    }
+
+    params.push(limit);
+    query += ` ORDER BY start_time ASC LIMIT $${params.length}`;
+
+    const result = await pool.query(query, params);
+    return result.rows;
+  }
+
+  /**
    * Get all events for an account
    */
   async findByAccountId(accountId: string): Promise<CalendarEvent[]> {

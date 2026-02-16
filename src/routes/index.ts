@@ -3,6 +3,9 @@ import smsRoutes from './sms.routes';
 import healthRoutes from './health.routes';
 import oauthRoutes from './oauth.routes';
 import calendarRoutes from './calendar.routes';
+import killswitchRoutes from './killswitch.routes';
+import emailRoutes from './email.routes';
+import briefingRoutes from './briefing.routes';
 
 const router = Router();
 
@@ -11,5 +14,8 @@ router.use('/webhooks/sms', smsRoutes);
 router.use('/health', healthRoutes);
 router.use('/oauth', oauthRoutes);
 router.use('/calendar', calendarRoutes);
+router.use('/killswitch', killswitchRoutes);
+router.use('/email', emailRoutes);
+router.use('/briefing', briefingRoutes);
 
 export default router;

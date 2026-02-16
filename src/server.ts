@@ -3,6 +3,9 @@ import { config, validateConfig } from './config';
 import { pool } from './config/database';
 import { redis } from './config/redis';
 import { scheduleCalendarSync, scheduleStudioTimeBlocking } from './jobs/schedulers/calendar.scheduler';
+import { scheduleKillswitchChecks } from './jobs/schedulers/killswitch.scheduler';
+import { scheduleEmailSync } from './jobs/schedulers/email.scheduler';
+import { scheduleBriefings } from './jobs/schedulers/briefing.scheduler';
 
 async function startServer() {
   try {
@@ -18,8 +21,11 @@ async function startServer() {
     console.log('✓ Redis connected');
 
     // Initialize scheduled jobs
-    scheduleCalendarSync();
-    scheduleStudioTimeBlocking();
+    await scheduleCalendarSync();
+    await scheduleStudioTimeBlocking();
+    scheduleKillswitchChecks();
+    scheduleEmailSync();
+    scheduleBriefings();
     console.log('✓ Scheduled jobs initialized');
 
     // Start server
@@ -42,6 +48,20 @@ async function startServer() {
       console.log(``);
       console.log(`  POST /calendar/sync/:account_id`);
       console.log(`  GET  /calendar/conflicts/:account_id`);
+      console.log(``);
+      console.log(`  ⏱️  GET  /killswitch/status`);
+      console.log(`  GET  /killswitch/hours`);
+      console.log(``);
+      console.log(`  📧 POST /email/scan`);
+      console.log(`  GET  /email/recent`);
+      console.log(`  GET  /email/urgent`);
+      console.log(`  GET  /email/drafts`);
+      console.log(`  POST /email/draft/:email_id`);
+      console.log(`  POST /email/send/:draft_id`);
+      console.log(``);
+      console.log(`  ☀️  POST /briefing/morning  (manual trigger)`);
+      console.log(`  🌙 POST /briefing/evening  (manual trigger)`);
+      console.log(`  GET  /briefing/preview`);
       console.log('');
     });
   } catch (error) {

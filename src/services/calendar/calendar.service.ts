@@ -136,6 +136,87 @@ export class CalendarService {
   }
 
   /**
+   * Delete an event from Google Calendar and local DB
+   */
+  async deleteEvent(accountId: string, googleEventId: string): Promise<void> {
+    try {
+      const auth = await oauthService.getAuthenticatedClient(accountId);
+      const calendar = google.calendar({ version: 'v3', auth });
+
+      await calendar.events.delete({
+        calendarId: 'primary',
+        eventId: googleEventId,
+      });
+
+      await calendarEventRepository.deleteByGoogleEventId(googleEventId);
+      console.log(`✓ Deleted calendar event ${googleEventId}`);
+    } catch (error) {
+      console.error('Error deleting calendar event:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update an event on Google Calendar and local DB
+   */
+  async updateEvent(
+    accountId: string,
+    googleEventId: string,
+    updates: { title?: string; startTime?: Date; endTime?: Date; description?: string }
+  ): Promise<void> {
+    try {
+      const auth = await oauthService.getAuthenticatedClient(accountId);
+      const calendar = google.calendar({ version: 'v3', auth });
+
+      // Get existing event first
+      const existing = await calendar.events.get({
+        calendarId: 'primary',
+        eventId: googleEventId,
+      });
+
+      const patch: calendar_v3.Schema$Event = {};
+      if (updates.title) patch.summary = updates.title;
+      if (updates.description) patch.description = updates.description;
+      if (updates.startTime) patch.start = { dateTime: updates.startTime.toISOString() };
+      if (updates.endTime) patch.end = { dateTime: updates.endTime.toISOString() };
+
+      await calendar.events.patch({
+        calendarId: 'primary',
+        eventId: googleEventId,
+        requestBody: patch,
+      });
+
+      // Update local DB
+      const localEvent = await calendarEventRepository.findByGoogleEventId(googleEventId);
+      if (localEvent) {
+        await calendarEventRepository.upsert({
+          google_event_id: googleEventId,
+          account_id: accountId,
+          calendar_id: 'primary',
+          title: updates.title ?? localEvent.title ?? undefined,
+          description: updates.description ?? localEvent.description ?? undefined,
+          start_time: updates.startTime || localEvent.start_time,
+          end_time: updates.endTime || localEvent.end_time,
+          location: localEvent.location ?? undefined,
+          event_type: localEvent.event_type,
+        });
+      }
+
+      console.log(`✓ Updated calendar event ${googleEventId}`);
+    } catch (error) {
+      console.error('Error updating calendar event:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Search for events by title across all connected accounts
+   */
+  async findEventsByTitle(search: string, startDate?: Date, endDate?: Date): Promise<any[]> {
+    return calendarEventRepository.findByTitleLike(search, startDate, endDate);
+  }
+
+  /**
    * Auto-block time for high-priority goals (studio time, workouts)
    * Finds available slots and creates blocked events
    */
