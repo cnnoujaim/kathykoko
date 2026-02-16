@@ -1,0 +1,146 @@
+import { pool } from '../config/database';
+import { CalendarEvent, CreateCalendarEventInput } from '../types/calendar.types';
+
+/**
+ * Repository for calendar events (local cache of Google Calendar)
+ * Enables fast conflict detection without API calls
+ */
+export class CalendarEventRepository {
+  /**
+   * Create or update calendar event from Google sync
+   * Uses ON CONFLICT to handle updates
+   */
+  async upsert(input: CreateCalendarEventInput): Promise<CalendarEvent> {
+    const {
+      google_event_id,
+      account_id,
+      calendar_id,
+      title,
+      description,
+      start_time,
+      end_time,
+      location,
+      event_type = 'personal',
+      is_auto_blocked = false,
+      attendees,
+      recurring_rule,
+      task_id,
+    } = input;
+
+    const result = await pool.query(
+      `INSERT INTO calendar_events (
+        google_event_id, account_id, calendar_id, title, description,
+        start_time, end_time, location, event_type, is_auto_blocked,
+        attendees, recurring_rule, task_id, synced_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+      ON CONFLICT (google_event_id)
+      DO UPDATE SET
+        title = $4,
+        description = $5,
+        start_time = $6,
+        end_time = $7,
+        location = $8,
+        event_type = $9,
+        attendees = $11,
+        recurring_rule = $12,
+        task_id = $13,
+        synced_at = NOW(),
+        updated_at = NOW()
+      RETURNING *`,
+      [
+        google_event_id,
+        account_id,
+        calendar_id,
+        title,
+        description,
+        start_time,
+        end_time,
+        location,
+        event_type,
+        is_auto_blocked,
+        attendees,
+        recurring_rule,
+        task_id,
+      ]
+    );
+
+    return result.rows[0];
+  }
+
+  /**
+   * Find events in a time range (for conflict detection)
+   * Returns events that overlap with the given range
+   */
+  async findInRange(
+    accountId: string,
+    startTime: Date,
+    endTime: Date
+  ): Promise<CalendarEvent[]> {
+    const result = await pool.query(
+      `SELECT * FROM calendar_events
+       WHERE account_id = $1
+       AND start_time < $3
+       AND end_time > $2
+       ORDER BY start_time ASC`,
+      [accountId, startTime, endTime]
+    );
+    return result.rows;
+  }
+
+  /**
+   * Find event by Google event ID
+   */
+  async findByGoogleEventId(googleEventId: string): Promise<CalendarEvent | null> {
+    const result = await pool.query(
+      'SELECT * FROM calendar_events WHERE google_event_id = $1',
+      [googleEventId]
+    );
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Delete event (when deleted from Google Calendar)
+   */
+  async deleteByGoogleEventId(googleEventId: string): Promise<void> {
+    await pool.query(
+      'DELETE FROM calendar_events WHERE google_event_id = $1',
+      [googleEventId]
+    );
+  }
+
+  /**
+   * Get all auto-blocked events in a date range
+   * Used for tracking studio time, workout blocks, etc.
+   */
+  async getAutoBlockedEvents(
+    accountId: string,
+    startDate: Date,
+    endDate: Date
+  ): Promise<CalendarEvent[]> {
+    const result = await pool.query(
+      `SELECT * FROM calendar_events
+       WHERE account_id = $1
+       AND is_auto_blocked = true
+       AND start_time >= $2
+       AND end_time <= $3
+       ORDER BY start_time ASC`,
+      [accountId, startDate, endDate]
+    );
+    return result.rows;
+  }
+
+  /**
+   * Get all events for an account
+   */
+  async findByAccountId(accountId: string): Promise<CalendarEvent[]> {
+    const result = await pool.query(
+      `SELECT * FROM calendar_events
+       WHERE account_id = $1
+       ORDER BY start_time ASC`,
+      [accountId]
+    );
+    return result.rows;
+  }
+}
+
+export const calendarEventRepository = new CalendarEventRepository();

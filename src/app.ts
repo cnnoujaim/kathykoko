@@ -5,8 +5,9 @@ import { requestLogger } from './middleware/logger';
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
 import routes from './routes';
 
-// Import worker to ensure it's registered
+// Import workers to ensure they're registered
 import './jobs/workers/process-sms.worker';
+import './jobs/workers/calendar-sync.worker';
 
 const app: Express = express();
 

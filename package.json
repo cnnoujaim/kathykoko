@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "migrate": "ts-node scripts/migrate.ts",
     "seed": "ts-node -r tsconfig-paths/register scripts/seed-goals.ts",
+    "seed:accounts": "ts-node -r tsconfig-paths/register scripts/seed-accounts.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "docker:up": "docker-compose up -d",
