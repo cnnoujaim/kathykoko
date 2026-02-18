@@ -716,6 +716,24 @@ html, body {
 .event-type-dot.personal { background: var(--personal); }
 .event-type-dot.blocked { background: var(--text-muted); }
 
+/* Calendar Conflict Highlighting */
+.calendar-event.conflict {
+  border-left: 3px solid var(--urgent);
+  background: rgba(255, 143, 171, 0.08);
+}
+
+.conflict-badge {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 143, 171, 0.2);
+  color: var(--urgent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-left: auto;
+}
+
 /* ==================== Status / Killswitch ==================== */
 
 #killswitch-card {

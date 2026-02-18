@@ -460,15 +460,32 @@
         const dayEl = document.createElement('div');
         dayEl.className = 'calendar-day';
 
+        // Detect conflicts: mark events that overlap with another event
+        var conflictIds = {};
+        for (var i = 0; i < events.length; i++) {
+          for (var j = i + 1; j < events.length; j++) {
+            var aStart = new Date(events[i].start_time).getTime();
+            var aEnd = new Date(events[i].end_time).getTime();
+            var bStart = new Date(events[j].start_time).getTime();
+            var bEnd = new Date(events[j].end_time).getTime();
+            if (aStart < bEnd && aEnd > bStart) {
+              conflictIds[events[i].id] = true;
+              conflictIds[events[j].id] = true;
+            }
+          }
+        }
+
         let html = '<div class="calendar-day-header">' + date + '</div>';
         events.forEach(event => {
           const time = new Date(event.start_time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
           const type = event.event_type || 'personal';
+          const conflictClass = conflictIds[event.id] ? ' conflict' : '';
           html +=
-            '<div class="calendar-event">' +
+            '<div class="calendar-event' + conflictClass + '">' +
               '<div class="event-type-dot ' + type + '"></div>' +
               '<span class="event-time">' + time + '</span>' +
               '<span class="event-title">' + escapeHtml(event.title || 'Untitled') + '</span>' +
+              (conflictIds[event.id] ? '<span class="conflict-badge">conflict</span>' : '') +
             '</div>';
         });
 

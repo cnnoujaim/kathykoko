@@ -88,6 +88,46 @@ export class CalendarEventRepository {
   }
 
   /**
+   * Find events in a time range across multiple accounts (for cross-account conflict detection)
+   */
+  async findInRangeMultiAccount(
+    accountIds: string[],
+    startTime: Date,
+    endTime: Date
+  ): Promise<CalendarEvent[]> {
+    if (accountIds.length === 0) return [];
+    const result = await pool.query(
+      `SELECT * FROM calendar_events
+       WHERE account_id = ANY($1)
+       AND start_time < $3
+       AND end_time > $2
+       ORDER BY start_time ASC`,
+      [accountIds, startTime, endTime]
+    );
+    return result.rows;
+  }
+
+  /**
+   * Get all events across multiple accounts in a date range (for slot finding)
+   */
+  async findAllInRangeMultiAccount(
+    accountIds: string[],
+    startTime: Date,
+    endTime: Date
+  ): Promise<CalendarEvent[]> {
+    if (accountIds.length === 0) return [];
+    const result = await pool.query(
+      `SELECT * FROM calendar_events
+       WHERE account_id = ANY($1)
+       AND start_time < $3
+       AND end_time > $2
+       ORDER BY start_time ASC`,
+      [accountIds, startTime, endTime]
+    );
+    return result.rows;
+  }
+
+  /**
    * Find event by Google event ID
    */
   async findByGoogleEventId(googleEventId: string): Promise<CalendarEvent | null> {

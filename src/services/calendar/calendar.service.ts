@@ -1,7 +1,14 @@
 import { google, calendar_v3 } from 'googleapis';
 import { oauthService } from '../oauth/oauth.service';
 import { calendarEventRepository } from '../../repositories/calendar-event.repository';
-import { CalendarConflict } from '../../types/calendar.types';
+import { CalendarConflict, CalendarEvent } from '../../types/calendar.types';
+import { pool } from '../../config/database';
+
+interface AvailableSlot {
+  start: Date;
+  end: Date;
+  label: string; // e.g. "Today 2:00–3:00 PM"
+}
 
 /**
  * Calendar service for Google Calendar integration
@@ -97,6 +104,135 @@ export class CalendarService {
       hasConflict: conflicts.length > 0,
       conflicts,
     };
+  }
+
+  /**
+   * Check for conflicts across ALL of a user's connected accounts
+   */
+  async checkConflictsForUser(
+    userId: string,
+    startTime: Date,
+    endTime: Date
+  ): Promise<CalendarConflict> {
+    const accounts = await pool.query(
+      `SELECT ua.id FROM user_accounts ua
+       JOIN oauth_tokens ot ON ua.id = ot.account_id
+       WHERE ua.user_id = $1 AND ot.provider = 'google'`,
+      [userId]
+    );
+    const accountIds = accounts.rows.map((r: { id: string }) => r.id);
+
+    if (accountIds.length === 0) {
+      return { hasConflict: false, conflicts: [] };
+    }
+
+    const conflicts = await calendarEventRepository.findInRangeMultiAccount(
+      accountIds, startTime, endTime
+    );
+
+    return { hasConflict: conflicts.length > 0, conflicts };
+  }
+
+  /**
+   * Find available time slots across all of a user's calendars
+   * Walks through work hours (9am–7pm, weekdays) in 30-min increments
+   */
+  async findAvailableSlots(
+    userId: string,
+    durationMinutes: number,
+    aroundDate: Date,
+    count: number = 3
+  ): Promise<AvailableSlot[]> {
+    // Get all account IDs
+    const accounts = await pool.query(
+      `SELECT ua.id FROM user_accounts ua
+       JOIN oauth_tokens ot ON ua.id = ot.account_id
+       WHERE ua.user_id = $1 AND ot.provider = 'google'`,
+      [userId]
+    );
+    const accountIds = accounts.rows.map((r: { id: string }) => r.id);
+    if (accountIds.length === 0) return [];
+
+    // Search window: from now (or aroundDate) to +5 days
+    const searchStart = new Date(Math.max(aroundDate.getTime(), Date.now()));
+    const searchEnd = new Date(searchStart);
+    searchEnd.setDate(searchEnd.getDate() + 5);
+
+    // Get all events in the window
+    const events = await calendarEventRepository.findInRangeMultiAccount(
+      accountIds, searchStart, searchEnd
+    );
+
+    const slots: AvailableSlot[] = [];
+    const now = new Date();
+
+    // Walk through each day
+    const cursor = new Date(searchStart);
+    cursor.setHours(0, 0, 0, 0);
+
+    while (slots.length < count && cursor < searchEnd) {
+      const dayOfWeek = cursor.getDay();
+      // Skip weekends
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        cursor.setDate(cursor.getDate() + 1);
+        continue;
+      }
+
+      // Walk through work hours: 9am to 7pm in 30-min increments
+      for (let hour = 9; hour < 19 && slots.length < count; hour++) {
+        for (let min = 0; min < 60 && slots.length < count; min += 30) {
+          const slotStart = new Date(cursor);
+          slotStart.setHours(hour, min, 0, 0);
+
+          // Skip if in the past
+          if (slotStart <= now) continue;
+
+          const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60 * 1000);
+
+          // Don't go past 7pm
+          const dayEnd = new Date(cursor);
+          dayEnd.setHours(19, 0, 0, 0);
+          if (slotEnd > dayEnd) continue;
+
+          // Check for overlaps with any event
+          const hasOverlap = events.some(e => {
+            const eStart = new Date(e.start_time).getTime();
+            const eEnd = new Date(e.end_time).getTime();
+            return slotStart.getTime() < eEnd && slotEnd.getTime() > eStart;
+          });
+
+          if (!hasOverlap) {
+            slots.push({
+              start: slotStart,
+              end: slotEnd,
+              label: this.formatSlotLabel(slotStart, slotEnd),
+            });
+          }
+        }
+      }
+
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    return slots;
+  }
+
+  /**
+   * Format a slot as a human-readable label like "Today 2:00–3:00 PM"
+   */
+  private formatSlotLabel(start: Date, end: Date): string {
+    const now = new Date();
+    const isToday = start.toDateString() === now.toDateString();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const isTomorrow = start.toDateString() === tomorrow.toDateString();
+
+    const dayLabel = isToday ? 'Today' : isTomorrow ? 'Tomorrow'
+      : start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+    const fmt = (d: Date) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+    return `${dayLabel} ${fmt(start)}–${fmt(end)}`;
   }
 
   /**

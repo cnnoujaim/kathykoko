@@ -291,16 +291,31 @@ export async function processMessage(body: string, messageSid?: string, userId?:
     let conflictWarning = '';
     const accountId = await getAccountIdForCategory(parsedTask.category, userId);
 
-    if (parsedTask.due_date && parsedTask.estimated_hours && accountId) {
+    if (parsedTask.due_date && parsedTask.estimated_hours && userId) {
       const dueDate = new Date(parsedTask.due_date);
-      const endTime = new Date(dueDate.getTime() + parsedTask.estimated_hours * 60 * 60 * 1000);
+      const durationMinutes = parsedTask.estimated_hours * 60;
+      const endTime = new Date(dueDate.getTime() + durationMinutes * 60 * 1000);
 
       try {
-        const conflict = await calendarService.checkConflicts(accountId, dueDate, endTime);
+        // Cross-account conflict check
+        const conflict = await calendarService.checkConflictsForUser(userId, dueDate, endTime);
         if (conflict.hasConflict) {
           const conflictCount = conflict.conflicts.length;
           const conflictSummary = conflict.conflicts[0].title || 'event';
-          conflictWarning = ` ⚠️ Conflict: ${conflictCount} event(s) at that time (${conflictSummary})`;
+          conflictWarning = `\n⚠️ Conflict: ${conflictCount} event(s) overlap (${conflictSummary})`;
+
+          // Suggest available slots
+          try {
+            const slots = await calendarService.findAvailableSlots(userId, durationMinutes, dueDate, 3);
+            if (slots.length > 0) {
+              conflictWarning += '\nHere are some open slots:';
+              slots.forEach(slot => {
+                conflictWarning += `\n  • ${slot.label}`;
+              });
+            }
+          } catch (slotError) {
+            console.error('Slot suggestion failed:', slotError);
+          }
         }
       } catch (error) {
         console.error('Calendar conflict check failed:', error);
