@@ -44,6 +44,34 @@ export class ClaudeService {
   }
 
   /**
+   * Multi-turn chat with conversation history
+   */
+  async chat(
+    messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    systemPrompt?: string,
+    maxTokens: number = 1024
+  ): Promise<string> {
+    try {
+      const response = await this.client.messages.create({
+        model: config.anthropic.model,
+        max_tokens: maxTokens,
+        system: systemPrompt,
+        messages,
+      });
+
+      const textContent = response.content.find((block) => block.type === 'text');
+      if (!textContent || textContent.type !== 'text') {
+        throw new Error('No text content in Claude response');
+      }
+
+      return textContent.text;
+    } catch (error) {
+      console.error('Claude chat error:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Complete with JSON response (for structured outputs)
    */
   async completeJSON<T>(

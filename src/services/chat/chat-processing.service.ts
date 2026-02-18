@@ -26,7 +26,7 @@ export interface ChatResponse {
  * Classify a message into one of: query, task, killswitch, action.
  * Uses fast keyword matching first, then Claude for ambiguous cases.
  */
-export async function classifyMessage(body: string): Promise<MessageType> {
+export async function classifyMessage(body: string, history: Array<{ role: 'user' | 'assistant'; content: string }> = []): Promise<MessageType> {
   const lower = body.toLowerCase().trim();
 
   // Fast path: email scan requests
@@ -96,18 +96,25 @@ export async function classifyMessage(body: string): Promise<MessageType> {
     return 'query';
   }
 
-  // Ambiguous: use Claude to classify
+  // Ambiguous: use Claude to classify (include recent history for context)
   try {
-    const classification = await claudeService.completeJSON<{ type: 'query' | 'task' | 'action' }>(
-      `Classify this SMS into one of three types:
-- "query": asking a question about schedule, calendar, tasks, or status
+    const historyContext = history.length > 0
+      ? `\nRECENT CONVERSATION:\n${history.slice(-6).map(m => `${m.role}: ${m.content}`).join('\n')}\n`
+      : '';
+
+    const classification = await claudeService.completeJSON<{ type: 'query' | 'task' | 'action' | 'goals' }>(
+      `Classify this message into one of these types:
+- "query": asking a question about schedule, calendar, tasks, or status, or continuing a conversation
 - "task": requesting to create something new (a new task, reminder, etc.)
 - "action": managing an existing task or calendar event (mark done, delete, edit, reschedule, cancel, reprioritize)
+- "goals": setting up, describing, or discussing goals
+${historyContext}
+MESSAGE: "${body}"
 
-SMS: "${body}"
+Consider the conversation context when classifying. For example, "yes" after a question about goals should be "goals", and a follow-up to a query should be "query".
 
-Return JSON: {"type": "query"} or {"type": "task"} or {"type": "action"}`,
-      'You classify SMS messages. Return only valid JSON.',
+Return JSON: {"type": "query"} or {"type": "task"} or {"type": "action"} or {"type": "goals"}`,
+      'You classify messages. Return only valid JSON.',
       64
     );
     return classification.type;
@@ -163,7 +170,7 @@ async function getAccountIdForCategory(category: string, userId?: string): Promi
  * Returns the response string and message type — does NOT send SMS.
  * This is used by both the SMS worker and the web chat endpoint.
  */
-export async function processMessage(body: string, messageSid?: string, userId?: string): Promise<ChatResponse> {
+export async function processMessage(body: string, messageSid?: string, userId?: string, history: Array<{ role: 'user' | 'assistant'; content: string }> = []): Promise<ChatResponse> {
   // Check if this is a response to a pending evening check-in
   const pendingCheckin = await healthCheckinRepository.findPendingResponse();
   if (pendingCheckin) {
@@ -171,8 +178,8 @@ export async function processMessage(body: string, messageSid?: string, userId?:
     return { response, messageType: 'checkin' };
   }
 
-  // Classify message
-  const messageType = await classifyMessage(body);
+  // Classify message (pass history for context-aware classification)
+  const messageType = await classifyMessage(body, history);
   console.log(`📋 Message classified as: ${messageType}`);
 
   if (messageType === 'killswitch') {
@@ -181,7 +188,7 @@ export async function processMessage(body: string, messageSid?: string, userId?:
   }
 
   if (messageType === 'query') {
-    const response = await queryService.answer(body);
+    const response = await queryService.answer(body, history);
     return { response, messageType: 'query' };
   }
 
@@ -196,7 +203,7 @@ export async function processMessage(body: string, messageSid?: string, userId?:
   }
 
   if (messageType === 'goals') {
-    const response = await handleGoalOnboarding(body, userId);
+    const response = await handleGoalOnboarding(body, userId, history);
     return { response, messageType: 'goals' };
   }
 
@@ -398,7 +405,7 @@ export async function processMessage(body: string, messageSid?: string, userId?:
  * Short messages get the intro prompt.
  * Detailed messages get parsed into goals across multiple categories.
  */
-async function handleGoalOnboarding(body: string, userId?: string): Promise<string> {
+async function handleGoalOnboarding(body: string, userId?: string, history: Array<{ role: 'user' | 'assistant'; content: string }> = []): Promise<string> {
   if (!userId) {
     return "I'd love to help you set up goals! Please log in first so I can save them for you.";
   }
@@ -426,6 +433,10 @@ async function handleGoalOnboarding(body: string, userId?: string): Promise<stri
 
   // Detailed message — parse goals across all categories using Claude
   try {
+    const historyContext = history.length > 0
+      ? `\nPrevious conversation:\n${history.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}\n`
+      : '';
+
     const result = await claudeService.completeJSON<{
       categories: Array<{
         category: string;
@@ -443,8 +454,8 @@ async function handleGoalOnboarding(body: string, userId?: string): Promise<stri
 
 The user's available categories are: ${categoryList}.
 Map each goal to the best-fitting category. If a goal doesn't fit any existing category, use the closest match.
-
-User's input:
+${historyContext}
+User's latest input:
 "${body}"
 
 For each goal mentioned, extract:

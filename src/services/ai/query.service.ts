@@ -10,7 +10,7 @@ export class QueryService {
   /**
    * Answer a natural language question using calendar + task context
    */
-  async answer(question: string): Promise<string> {
+  async answer(question: string, history: Array<{ role: 'user' | 'assistant'; content: string }> = []): Promise<string> {
     const now = new Date();
     const currentDateTime = now.toLocaleString('en-US', {
       timeZone: 'America/Los_Angeles',
@@ -52,6 +52,15 @@ LYRA WORK HOURS: ${killswitchStatus.currentHours}/40 this week${killswitchStatus
 USER QUESTION: "${question}"
 
 Answer the question based on the context above. Be concise (SMS format). If you don't have enough info, say so honestly.`;
+
+    // Use multi-turn chat if we have conversation history
+    if (history.length > 0) {
+      const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+        ...history.slice(-10),
+        { role: 'user' as const, content: prompt },
+      ];
+      return await claudeService.chat(messages, systemPrompt, 512);
+    }
 
     return await claudeService.complete(prompt, systemPrompt, 512);
   }

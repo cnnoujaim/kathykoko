@@ -19,6 +19,16 @@ class DashboardController {
 
       const messageSid = `web-${crypto.randomUUID()}`;
 
+      // Fetch recent conversation history before saving current message
+      const recentMessages = await messageRepository.listRecent(20, userId);
+      const history = recentMessages
+        .reverse()
+        .filter((m: { body: string | null }) => m.body)
+        .map((m: { direction: string; body: string | null }) => ({
+          role: (m.direction === 'inbound' ? 'user' : 'assistant') as 'user' | 'assistant',
+          content: m.body!,
+        }));
+
       await messageRepository.create({
         message_sid: messageSid,
         direction: 'inbound',
@@ -29,7 +39,7 @@ class DashboardController {
         user_id: userId,
       });
 
-      const { response, messageType } = await chatProcessingService.processMessage(message, messageSid, userId);
+      const { response, messageType } = await chatProcessingService.processMessage(message, messageSid, userId, history);
 
       await messageRepository.create({
         message_sid: `web-reply-${crypto.randomUUID()}`,
