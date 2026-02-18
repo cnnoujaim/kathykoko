@@ -380,15 +380,13 @@ export async function processMessage(body: string, messageSid?: string, userId?:
 
 /**
  * Handle goal-related messages in chat.
- * If user has no goals, prompt onboarding.
- * If user describes goals for a category, generate and save them.
+ * Short messages get the intro prompt.
+ * Detailed messages get parsed into goals across multiple categories.
  */
 async function handleGoalOnboarding(body: string, userId?: string): Promise<string> {
   if (!userId) {
     return "I'd love to help you set up goals! Please log in first so I can save them for you.";
   }
-
-  const existingGoals = await goalRepository.findAll(userId);
 
   // Get user's categories
   const catResult = await pool.query(
@@ -400,105 +398,110 @@ async function handleGoalOnboarding(body: string, userId?: string): Promise<stri
 
   const lower = body.toLowerCase().trim();
 
-  // If they just said "goals" or "set up my goals", give them the intro
-  if (lower === 'goals' || lower.includes('set up') || lower.includes('onboarding') || existingGoals.length === 0) {
+  // Short messages = show intro prompt. Long messages = they're providing actual goals.
+  const isShortMessage = body.length < 100;
+  if (isShortMessage && (lower === 'goals' || lower.includes('set up') || lower.includes('help') || lower.includes('onboarding'))) {
+    const existingGoals = await goalRepository.findAll(userId);
     const intro = existingGoals.length === 0
       ? `Let's set up your goals! I'll help you create measurable goals for each area of your life.`
       : `You have ${existingGoals.length} goals set up. Want to add more?`;
 
-    return `${intro}\n\nTell me what you want to achieve in one of your areas: ${categoryList}.\n\nFor example: "For work, I want to get promoted to senior engineer by end of year" or "For personal, I want to run a half marathon."\n\nThink about outcomes you can measure — results that lead to a larger objective.`;
+    return `${intro}\n\nTell me what you want to achieve — you can describe goals for one area or paste in all your goals at once. Your categories: ${categoryList}.\n\nFor example: "For work, I want to get promoted to senior engineer by end of year"\n\nThink about outcomes you can measure — results that lead to a larger objective.`;
   }
 
-  // Otherwise, they're describing goals — use Claude to generate them
-  // Try to detect which category they're talking about
-  let detectedCategory = '';
-  for (const cat of categories) {
-    if (lower.includes(`for ${cat}`) || lower.includes(`${cat}:`)) {
-      detectedCategory = cat;
-      break;
-    }
-  }
-
-  // Ask Claude to generate goals
+  // Detailed message — parse goals across all categories using Claude
   try {
     const result = await claudeService.completeJSON<{
-      category: string;
-      goals: Array<{
-        title: string;
-        description: string;
-        success_criteria: string;
-        target_date: string;
-        priority: number;
-        milestones: string[];
+      categories: Array<{
+        category: string;
+        goals: Array<{
+          title: string;
+          description: string;
+          success_criteria: string;
+          target_date: string;
+          priority: number;
+          milestones: string[];
+        }>;
       }>;
     }>(
-      `The user wants to set goals. Their available categories are: ${categoryList}.
-${detectedCategory ? `They are talking about the "${detectedCategory}" category.` : 'Detect which category they mean from their message.'}
+      `The user is describing their goals. Parse their input into structured goals grouped by category.
 
-User's message: "${body}"
+The user's available categories are: ${categoryList}.
+Map each goal to the best-fitting category. If a goal doesn't fit any existing category, use the closest match.
 
-Generate 1-3 SMART goals based on what they said. Each goal should be:
-- Specific and measurable
-- Have a clear target date (YYYY-MM-DD format, within the next 12 months from today, February 2026)
-- Include 2-4 concrete milestones that are stepping stones to the goal
+User's input:
+"${body}"
+
+For each goal mentioned, extract:
+- A concise title
+- Description of what it means
+- Measurable success criteria
+- Target date (YYYY-MM-DD format — use the dates they mention, or reasonable defaults within 2026)
+- Priority (1=highest, 3=lowest)
+- 2-4 concrete milestones
 
 Return JSON:
 {
-  "category": "the category name",
-  "goals": [
+  "categories": [
     {
-      "title": "Clear, specific goal title",
-      "description": "What this goal means and why it matters",
-      "success_criteria": "How they'll know they achieved it — specific metrics or outcomes",
-      "target_date": "YYYY-MM-DD",
-      "priority": 1,
-      "milestones": ["First milestone", "Second milestone", "Third milestone"]
+      "category": "work",
+      "goals": [
+        {
+          "title": "Concise goal title",
+          "description": "What this goal means",
+          "success_criteria": "How to measure success",
+          "target_date": "2026-12-31",
+          "priority": 1,
+          "milestones": ["Step 1", "Step 2", "Step 3"]
+        }
+      ]
     }
   ]
 }`,
-      'You are Kathy Koko, an AI Chief of Staff. Generate ambitious but achievable goals focused on measurable outcomes, not activities. Keep titles concise.',
-      1024
+      'You are Kathy Koko, an AI Chief of Staff. Extract ALL goals the user described — do not summarize or reduce them. Preserve their specific metrics and dates. Keep titles concise but descriptive.',
+      4096
     );
 
-    // Save the generated goals
-    const savedGoals = [];
-    for (const g of result.goals) {
-      const embedding = await embeddingsService.generateEmbedding(`${g.title}. ${g.description}`);
-      const goal = await goalRepository.create({
-        title: g.title,
-        description: g.description,
-        category: result.category,
-        priority: g.priority,
-        target_date: new Date(g.target_date),
-        success_criteria: g.success_criteria,
-        embedding,
-        user_id: userId,
-      });
+    // Save all goals across all categories
+    let totalSaved = 0;
+    const summaryParts: string[] = [];
 
-      for (let i = 0; i < g.milestones.length; i++) {
-        await goalMilestoneRepository.create(goal.id, g.milestones[i], i);
+    for (const cat of result.categories) {
+      const goalTitles: string[] = [];
+
+      for (const g of cat.goals) {
+        const embedding = await embeddingsService.generateEmbedding(`${g.title}. ${g.description}`);
+        const goal = await goalRepository.create({
+          title: g.title,
+          description: g.description,
+          category: cat.category,
+          priority: g.priority,
+          target_date: new Date(g.target_date),
+          success_criteria: g.success_criteria,
+          embedding,
+          user_id: userId,
+        });
+
+        for (let i = 0; i < g.milestones.length; i++) {
+          await goalMilestoneRepository.create(goal.id, g.milestones[i], i);
+        }
+
+        goalTitles.push(g.title);
+        totalSaved++;
       }
 
-      savedGoals.push(g);
+      const catName = cat.category.charAt(0).toUpperCase() + cat.category.slice(1);
+      summaryParts.push(`${catName}: ${goalTitles.map((t, i) => `${i + 1}. ${t}`).join(', ')}`);
     }
 
-    // Format response
-    let response = `Great! I've created ${savedGoals.length} goal${savedGoals.length > 1 ? 's' : ''} for ${result.category}:\n\n`;
-    savedGoals.forEach((g, i) => {
-      response += `${i + 1}. ${g.title}\n`;
-      response += `   Target: ${new Date(g.target_date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}\n`;
-      response += `   Milestones:\n`;
-      g.milestones.forEach(m => {
-        response += `   - ${m}\n`;
-      });
-      response += '\n';
-    });
+    let response = `Done! I've saved ${totalSaved} goals across ${result.categories.length} areas:\n\n`;
+    response += summaryParts.join('\n\n');
+    response += '\n\nCheck the Goals tab to see them all with milestones and progress tracking!';
 
-    response += `Check the Goals tab to see them! Want to set goals for another area? (${categoryList})`;
     return response;
   } catch (error) {
     console.error('Goal generation error:', error);
-    return "I had trouble generating goals from that. Can you try describing what you want to achieve in a specific area? For example: \"For work, I want to...\"";
+    return "I had trouble processing all those goals. Try sending them in smaller chunks — one area at a time. For example, start with your work goals.";
   }
 }
 
