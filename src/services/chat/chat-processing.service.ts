@@ -171,15 +171,72 @@ export async function processMessage(body: string, messageSid?: string): Promise
     return { response, messageType: 'email_scan' };
   }
 
-  // Task creation flow
+  // Task creation flow — supports multiple tasks from one message
   console.log(`🤖 Parsing SMS with Claude: "${body}"`);
-  const parsedTask = await messageParserService.parse(body);
-  console.log(`✓ Parsed task:`, parsedTask);
+  const parsedTasks = await messageParserService.parse(body);
+  console.log(`✓ Parsed ${parsedTasks.length} task(s):`, parsedTasks.map(t => t.title));
 
-  // Check killswitch for Lyra tasks
-  if (parsedTask.category === 'lyra') {
-    const killcheck = await killswitchService.shouldBlockLyraTask();
-    if (killcheck.blocked) {
+  const confirmations: string[] = [];
+  const warnings: string[] = [];
+
+  for (let i = 0; i < parsedTasks.length; i++) {
+    const parsedTask = parsedTasks[i];
+    const sid = messageSid ? `${messageSid}${parsedTasks.length > 1 ? `-${i}` : ''}` : 'web';
+
+    // Check killswitch for Lyra tasks — defer instead of reject
+    if (parsedTask.category === 'lyra') {
+      const killcheck = await killswitchService.shouldBlockLyraTask();
+      if (killcheck.blocked) {
+        await taskRepository.create({
+          raw_text: body,
+          parsed_title: parsedTask.title,
+          description: parsedTask.description || '',
+          priority: parsedTask.priority,
+          category: parsedTask.category,
+          status: 'deferred',
+          alignment_score: 0,
+          pushback_reason: 'Deferred — 40-hour killswitch active. Will resurface next week.',
+          due_date: parsedTask.due_date ? new Date(parsedTask.due_date) : undefined,
+          estimated_hours: parsedTask.estimated_hours || undefined,
+          created_from_message_sid: sid,
+        });
+
+        confirmations.push(`Saved "${parsedTask.title}" — deferred until killswitch resets`);
+        if (!warnings.includes(killcheck.message)) {
+          warnings.push(killcheck.message);
+        }
+        continue;
+      }
+    }
+
+    // Validate task against goals
+    console.log(`🎯 Validating "${parsedTask.title}" against goals...`);
+    const validation = await taskValidatorService.validate(parsedTask);
+    console.log(`✓ Validation: score=${validation.alignmentScore.toFixed(2)}, valid=${validation.isValid}`);
+
+    if (validation.needsClarification) {
+      const clarificationMsg = validation.clarificationPrompt || 'Can you provide more details about this task?';
+
+      await taskRepository.create({
+        raw_text: body,
+        parsed_title: parsedTask.title,
+        description: parsedTask.description || '',
+        priority: parsedTask.priority,
+        category: parsedTask.category,
+        status: 'clarification_needed',
+        alignment_score: validation.alignmentScore,
+        due_date: parsedTask.due_date ? new Date(parsedTask.due_date) : undefined,
+        estimated_hours: parsedTask.estimated_hours || undefined,
+        created_from_message_sid: sid,
+      });
+
+      confirmations.push(`"${parsedTask.title}" — ${clarificationMsg}`);
+      continue;
+    }
+
+    if (validation.alignmentScore < 0.5) {
+      const pushbackMsg = await pushbackService.generate(parsedTask, validation);
+
       await taskRepository.create({
         raw_text: body,
         parsed_title: parsedTask.title,
@@ -187,133 +244,105 @@ export async function processMessage(body: string, messageSid?: string): Promise
         priority: parsedTask.priority,
         category: parsedTask.category,
         status: 'rejected',
-        alignment_score: 0,
-        pushback_reason: 'Blocked by 40-hour killswitch',
+        alignment_score: validation.alignmentScore,
+        pushback_reason: validation.reasoning,
         due_date: parsedTask.due_date ? new Date(parsedTask.due_date) : undefined,
         estimated_hours: parsedTask.estimated_hours || undefined,
-        created_from_message_sid: messageSid || 'web',
+        created_from_message_sid: sid,
       });
 
-      return { response: killcheck.message, messageType: 'task' };
+      confirmations.push(pushbackMsg);
+      continue;
     }
-  }
 
-  // Validate task against goals
-  console.log(`🎯 Validating against goals...`);
-  const validation = await taskValidatorService.validate(parsedTask);
-  console.log(`✓ Validation: score=${validation.alignmentScore.toFixed(2)}, valid=${validation.isValid}`);
+    // Task is valid — create it
+    let conflictWarning = '';
+    const accountId = await getAccountIdForCategory(parsedTask.category);
 
-  if (validation.needsClarification) {
-    const clarificationMsg = validation.clarificationPrompt || 'Can you provide more details about this task?';
+    if (parsedTask.due_date && parsedTask.estimated_hours && accountId) {
+      const dueDate = new Date(parsedTask.due_date);
+      const endTime = new Date(dueDate.getTime() + parsedTask.estimated_hours * 60 * 60 * 1000);
 
-    await taskRepository.create({
-      raw_text: body,
-      parsed_title: parsedTask.title,
-      description: parsedTask.description || '',
-      priority: parsedTask.priority,
-      category: parsedTask.category,
-      status: 'clarification_needed',
-      alignment_score: validation.alignmentScore,
-      due_date: parsedTask.due_date ? new Date(parsedTask.due_date) : undefined,
-      estimated_hours: parsedTask.estimated_hours || undefined,
-      created_from_message_sid: messageSid || 'web',
-    });
-
-    return { response: clarificationMsg, messageType: 'task' };
-  }
-
-  if (validation.alignmentScore < 0.5) {
-    const pushbackMsg = await pushbackService.generate(parsedTask, validation);
-
-    await taskRepository.create({
-      raw_text: body,
-      parsed_title: parsedTask.title,
-      description: parsedTask.description || '',
-      priority: parsedTask.priority,
-      category: parsedTask.category,
-      status: 'rejected',
-      alignment_score: validation.alignmentScore,
-      pushback_reason: validation.reasoning,
-      due_date: parsedTask.due_date ? new Date(parsedTask.due_date) : undefined,
-      estimated_hours: parsedTask.estimated_hours || undefined,
-      created_from_message_sid: messageSid || 'web',
-    });
-
-    return { response: pushbackMsg, messageType: 'task' };
-  }
-
-  // Task is valid — create it
-  let conflictWarning = '';
-  const accountId = await getAccountIdForCategory(parsedTask.category);
-
-  if (parsedTask.due_date && parsedTask.estimated_hours && accountId) {
-    const dueDate = new Date(parsedTask.due_date);
-    const endTime = new Date(dueDate.getTime() + parsedTask.estimated_hours * 60 * 60 * 1000);
-
-    try {
-      const conflict = await calendarService.checkConflicts(accountId, dueDate, endTime);
-      if (conflict.hasConflict) {
-        const conflictCount = conflict.conflicts.length;
-        const conflictSummary = conflict.conflicts[0].title || 'event';
-        conflictWarning = `\n\n⚠️ Calendar conflict: ${conflictCount} event(s) at that time (${conflictSummary})`;
+      try {
+        const conflict = await calendarService.checkConflicts(accountId, dueDate, endTime);
+        if (conflict.hasConflict) {
+          const conflictCount = conflict.conflicts.length;
+          const conflictSummary = conflict.conflicts[0].title || 'event';
+          conflictWarning = ` ⚠️ Conflict: ${conflictCount} event(s) at that time (${conflictSummary})`;
+        }
+      } catch (error) {
+        console.error('Calendar conflict check failed:', error);
       }
-    } catch (error) {
-      console.error('Calendar conflict check failed:', error);
+    }
+
+    const task = await taskRepository.create({
+      raw_text: body,
+      parsed_title: parsedTask.title,
+      description: parsedTask.description || '',
+      priority: parsedTask.priority,
+      category: parsedTask.category,
+      status: 'pending',
+      alignment_score: validation.alignmentScore,
+      due_date: parsedTask.due_date ? new Date(parsedTask.due_date) : undefined,
+      estimated_hours: parsedTask.estimated_hours || undefined,
+      created_from_message_sid: sid,
+      account_id: accountId,
+    });
+
+    console.log(`✓ Task created: ${task.id} - ${task.parsed_title}`);
+
+    // Auto-add to calendar if task has due date
+    if (task.due_date && task.estimated_hours && accountId) {
+      try {
+        const startTime = new Date(task.due_date);
+        const endTime = new Date(startTime.getTime() + task.estimated_hours * 60 * 60 * 1000);
+
+        await calendarService.createEventFromTask(
+          accountId,
+          task.id,
+          task.parsed_title || 'Task',
+          startTime,
+          endTime,
+          task.description || undefined
+        );
+
+        console.log(`✓ Added task ${task.id} to calendar`);
+      } catch (error) {
+        console.error('Failed to add task to calendar:', error);
+      }
+    }
+
+    // Build per-task confirmation
+    const desc = parsedTask.description ? ` — ${parsedTask.description}` : '';
+    let line = `${parsedTask.title} [${parsedTask.category}]${desc}${conflictWarning}`;
+
+    if (validation.alignmentScore < 0.7 && validation.reasoning) {
+      line += ` (Heads up: ${validation.reasoning})`;
+    }
+
+    confirmations.push(line);
+
+    if (parsedTask.category === 'lyra') {
+      const killcheck = await killswitchService.shouldBlockLyraTask();
+      if (killcheck.message && !warnings.includes(killcheck.message)) {
+        warnings.push(killcheck.message);
+      }
     }
   }
 
-  const task = await taskRepository.create({
-    raw_text: body,
-    parsed_title: parsedTask.title,
-    description: parsedTask.description || '',
-    priority: parsedTask.priority,
-    category: parsedTask.category,
-    status: 'pending',
-    alignment_score: validation.alignmentScore,
-    due_date: parsedTask.due_date ? new Date(parsedTask.due_date) : undefined,
-    estimated_hours: parsedTask.estimated_hours || undefined,
-    created_from_message_sid: messageSid || 'web',
-    account_id: accountId,
-  });
-
-  console.log(`✓ Task created: ${task.id} - ${task.parsed_title}`);
-
-  // Auto-add to calendar if task has due date
-  if (task.due_date && task.estimated_hours && accountId) {
-    try {
-      const startTime = new Date(task.due_date);
-      const endTime = new Date(startTime.getTime() + task.estimated_hours * 60 * 60 * 1000);
-
-      await calendarService.createEventFromTask(
-        accountId,
-        task.id,
-        task.parsed_title || 'Task',
-        startTime,
-        endTime,
-        task.description || undefined
-      );
-
-      console.log(`✓ Added task ${task.id} to calendar`);
-    } catch (error) {
-      console.error('Failed to add task to calendar:', error);
-    }
+  // Build final response
+  let response: string;
+  if (confirmations.length === 1) {
+    response = `Got it! Added: ${confirmations[0]}`;
+  } else {
+    response = `Got it! Added ${confirmations.length} tasks:\n${confirmations.map((c, i) => `${i + 1}. ${c}`).join('\n')}`;
   }
 
-  // Build confirmation message
-  let confirmationMessage = `Got it! Added: ${parsedTask.title}${conflictWarning}`;
-
-  if (parsedTask.category === 'lyra') {
-    const killcheck = await killswitchService.shouldBlockLyraTask();
-    if (killcheck.message) {
-      confirmationMessage += `\n\n${killcheck.message}`;
-    }
+  if (warnings.length > 0) {
+    response += `\n\n${warnings.join('\n')}`;
   }
 
-  if (validation.alignmentScore < 0.7 && validation.reasoning) {
-    confirmationMessage += `\n\nHeads up: ${validation.reasoning}`;
-  }
-
-  return { response: confirmationMessage, messageType: 'task' };
+  return { response, messageType: 'task' };
 }
 
 export const chatProcessingService = { classifyMessage, processMessage };

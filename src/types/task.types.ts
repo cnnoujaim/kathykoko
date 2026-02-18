@@ -5,7 +5,7 @@ export interface Task {
   description: string | null;
   priority: 'urgent' | 'high' | 'medium' | 'low' | null;
   category: 'lyra' | 'music' | 'personal' | 'house' | null;
-  status: 'pending' | 'clarification_needed' | 'active' | 'completed' | 'rejected';
+  status: 'pending' | 'clarification_needed' | 'active' | 'completed' | 'rejected' | 'deferred';
   alignment_score: number | null;
   pushback_reason: string | null;
   due_date: Date | null;
@@ -40,7 +40,7 @@ export interface CreateTaskInput {
   description?: string;
   priority?: 'urgent' | 'high' | 'medium' | 'low';
   category?: 'lyra' | 'music' | 'personal' | 'house';
-  status?: 'pending' | 'clarification_needed' | 'active' | 'completed' | 'rejected';
+  status?: 'pending' | 'clarification_needed' | 'active' | 'completed' | 'rejected' | 'deferred';
   alignment_score?: number;
   pushback_reason?: string;
   due_date?: Date;

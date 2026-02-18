@@ -1,20 +1,30 @@
-// Kathy Koko Dashboard - Single Page App
+// Kathy Koko Dashboard
 (function () {
   const API = '';
 
-  // ---- Tab Navigation ----
+  // ---- Navigation ----
+  // Chat is always visible. Nav buttons switch the right panel view.
   const navBtns = document.querySelectorAll('.nav-btn');
-  const tabs = document.querySelectorAll('.tab-content');
+  const panelViews = document.querySelectorAll('.panel-view');
 
   navBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       const tab = btn.dataset.tab;
       navBtns.forEach(b => b.classList.remove('active'));
-      tabs.forEach(t => t.classList.remove('active'));
       btn.classList.add('active');
-      document.getElementById('tab-' + tab).classList.add('active');
 
-      // Load data for the tab
+      // Chat nav just focuses the chat input (it's always visible)
+      if (tab === 'chat') {
+        document.getElementById('chat-input').focus();
+        return;
+      }
+
+      // Switch right panel view
+      panelViews.forEach(v => v.classList.remove('active'));
+      const target = document.getElementById('view-' + tab);
+      if (target) target.classList.add('active');
+
+      // Load data
       if (tab === 'tasks') loadTasks();
       if (tab === 'calendar') loadCalendar();
       if (tab === 'status') loadKillswitch();
@@ -74,6 +84,11 @@
       } else if (data.error) {
         addChatBubble('Error: ' + data.error, 'received', new Date().toISOString());
       }
+
+      // Auto-refresh tasks panel if a task was just created
+      if (data.messageType === 'task' || data.messageType === 'action' || data.messageType === 'email_scan') {
+        loadTasks();
+      }
     } catch (err) {
       hideTyping();
       addChatBubble('Failed to reach Kathy. Check your connection.', 'received', new Date().toISOString());
@@ -99,7 +114,6 @@
       chatMessages.innerHTML = '';
 
       if (data.messages && data.messages.length > 0) {
-        // Messages come newest-first, reverse for display
         const msgs = data.messages.reverse();
         msgs.forEach(msg => {
           const type = msg.direction === 'inbound' ? 'sent' : 'received';
@@ -145,16 +159,19 @@
 
       taskList.innerHTML = '';
 
-      // Sort: pending/active first, then completed
+      // Sort: pending/active first, deferred, then completed
+      const statusOrder = { pending: 0, active: 0, clarification_needed: 1, deferred: 2, completed: 3, rejected: 4 };
       const sorted = data.tasks.sort((a, b) => {
-        if (a.status === 'completed' && b.status !== 'completed') return 1;
-        if (a.status !== 'completed' && b.status === 'completed') return -1;
+        const sa = statusOrder[a.status] ?? 5;
+        const sb = statusOrder[b.status] ?? 5;
+        if (sa !== sb) return sa - sb;
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
 
       sorted.forEach(task => {
         const card = document.createElement('div');
-        card.className = 'task-card' + (task.status === 'completed' ? ' completed' : '');
+        const statusClass = task.status === 'completed' ? ' completed' : task.status === 'deferred' ? ' deferred' : '';
+        card.className = 'task-card' + statusClass;
 
         const dueStr = task.due_date
           ? new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -164,13 +181,23 @@
           ? '<span class="task-badge ' + task.priority + '">' + task.priority + '</span>'
           : '';
 
+        const deferredBadge = task.status === 'deferred'
+          ? '<span class="task-badge deferred">deferred</span>'
+          : '';
+
+        const description = task.description
+          ? '<div class="task-description">' + escapeHtml(task.description) + '</div>'
+          : '';
+
         card.innerHTML =
           '<div class="task-check" data-id="' + task.id + '" data-status="' + task.status + '"></div>' +
           '<div class="task-info">' +
             '<div class="task-title">' + escapeHtml(task.parsed_title || task.raw_text) + '</div>' +
+            description +
             '<div class="task-meta">' +
               '<span class="task-badge ' + task.category + '">' + task.category + '</span>' +
               priorityBadge +
+              deferredBadge +
               (dueStr ? '<span class="task-due">' + dueStr + '</span>' : '') +
               (task.estimated_hours ? '<span class="task-due">' + task.estimated_hours + 'h</span>' : '') +
             '</div>' +
@@ -180,7 +207,7 @@
         taskList.appendChild(card);
       });
 
-      // Bind check/delete handlers
+      // Bind handlers
       taskList.querySelectorAll('.task-check').forEach(el => {
         el.addEventListener('click', () => toggleTask(el.dataset.id, el.dataset.status));
       });
@@ -227,7 +254,6 @@
         return;
       }
 
-      // Group by day
       const grouped = {};
       data.events.forEach(event => {
         const date = new Date(event.start_time).toLocaleDateString('en-US', {
@@ -275,27 +301,43 @@
       const remaining = data.remainingHours || 40;
       const pct = Math.min((hours / 40) * 100, 100);
 
+      // Main status panel
       const bar = document.getElementById('killswitch-bar');
       bar.style.width = pct + '%';
 
-      if (hours < 25) bar.style.background = 'var(--personal)';
+      if (hours < 25) bar.style.background = 'linear-gradient(90deg, var(--baby-blue), var(--periwinkle))';
       else if (hours < 35) bar.style.background = 'var(--high)';
       else bar.style.background = 'var(--urgent)';
 
       document.getElementById('killswitch-label').innerHTML =
         hours.toFixed(1) + 'h <span>/ 40h (' + remaining.toFixed(1) + 'h remaining)</span>';
 
-      // Status info
       const statusInfo = document.getElementById('status-info');
       statusInfo.innerHTML =
         '<div class="status-item"><h3>Killswitch Active</h3><div class="value">' +
-          (data.isActive ? 'YES - Lyra tasks blocked' : 'No') +
+          (data.isActive ? 'YES - Lyra tasks deferred' : 'No') +
         '</div></div>' +
         '<div class="status-item"><h3>Week Start</h3><div class="value">' +
           (data.weekStartDate || 'N/A') +
         '</div></div>';
+
+      // Sidebar mini widget
+      updateSidebarHours(hours, remaining, pct);
     } catch {
       document.getElementById('killswitch-label').textContent = 'Unable to load';
+    }
+  }
+
+  function updateSidebarHours(hours, remaining, pct) {
+    const fill = document.getElementById('sidebar-hours-fill');
+    const text = document.getElementById('sidebar-hours-text');
+    if (fill) {
+      fill.style.width = pct + '%';
+      if (hours >= 35) fill.style.background = 'var(--urgent)';
+      else if (hours >= 25) fill.style.background = 'var(--high)';
+    }
+    if (text) {
+      text.textContent = hours.toFixed(1) + ' / 40h';
     }
   }
 
@@ -308,4 +350,15 @@
 
   // ---- Init ----
   loadMessages();
+  loadTasks(); // Pre-load tasks in right panel
+  // Load sidebar killswitch
+  fetch(API + '/api/killswitch')
+    .then(r => r.json())
+    .then(data => {
+      const hours = data.currentHours || 0;
+      const remaining = data.remainingHours || 40;
+      const pct = Math.min((hours / 40) * 100, 100);
+      updateSidebarHours(hours, remaining, pct);
+    })
+    .catch(() => {});
 })();

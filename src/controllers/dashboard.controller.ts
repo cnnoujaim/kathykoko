@@ -122,12 +122,13 @@ class DashboardController {
         tasks = await taskRepository.listByCategory(category as any, limit);
       } else {
         // Get all non-rejected tasks
-        const [pending, active, completed] = await Promise.all([
+        const [pending, active, completed, deferred] = await Promise.all([
           taskRepository.listByStatus('pending', limit),
           taskRepository.listByStatus('active', limit),
           taskRepository.listByStatus('completed', limit),
+          taskRepository.listByStatus('deferred', limit),
         ]);
-        tasks = [...pending, ...active, ...completed];
+        tasks = [...pending, ...active, ...deferred, ...completed];
       }
 
       res.json({ tasks });
@@ -145,7 +146,7 @@ class DashboardController {
       const { id } = req.params;
       const { status } = req.body;
 
-      if (!['pending', 'active', 'completed'].includes(status)) {
+      if (!['pending', 'active', 'completed', 'deferred'].includes(status)) {
         res.status(400).json({ error: 'Invalid status' });
         return;
       }

@@ -117,7 +117,7 @@ export class TaskRepository {
     const result = await pool.query(
       `SELECT * FROM tasks
        WHERE parsed_title ILIKE $1
-         AND status NOT IN ('rejected')
+         AND status NOT IN ('rejected', 'deferred')
        ORDER BY
          CASE WHEN parsed_title ILIKE $2 THEN 0 ELSE 1 END,
          created_at DESC

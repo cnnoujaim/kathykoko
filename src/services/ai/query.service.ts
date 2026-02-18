@@ -87,7 +87,7 @@ Answer the question based on the context above. Be concise (SMS format). If you 
     const result = await pool.query(
       `SELECT parsed_title, category, priority, due_date, estimated_hours, status
        FROM tasks
-       WHERE status IN ('pending', 'active', 'clarification_needed')
+       WHERE status IN ('pending', 'active', 'clarification_needed', 'deferred')
        ORDER BY
          CASE priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END,
          due_date ASC NULLS LAST
