@@ -121,14 +121,14 @@ class DashboardController {
       } else if (category && typeof category === 'string') {
         tasks = await taskRepository.listByCategory(category as any, limit);
       } else {
-        // Get all non-rejected tasks
-        const [pending, active, completed, deferred] = await Promise.all([
+        // Get all non-rejected tasks; only show completed tasks from today
+        const [pending, active, completedToday, deferred] = await Promise.all([
           taskRepository.listByStatus('pending', limit),
           taskRepository.listByStatus('active', limit),
-          taskRepository.listByStatus('completed', limit),
+          taskRepository.listCompletedToday(limit),
           taskRepository.listByStatus('deferred', limit),
         ]);
-        tasks = [...pending, ...active, ...deferred, ...completed];
+        tasks = [...pending, ...active, ...deferred, ...completedToday];
       }
 
       res.json({ tasks });

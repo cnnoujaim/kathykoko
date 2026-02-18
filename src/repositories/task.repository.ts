@@ -97,6 +97,21 @@ export class TaskRepository {
   }
 
   /**
+   * List completed tasks that were finished today only
+   */
+  async listCompletedToday(limit: number = 50): Promise<Task[]> {
+    const result = await pool.query(
+      `SELECT * FROM tasks
+       WHERE status = 'completed'
+       AND completed_at >= CURRENT_DATE
+       ORDER BY completed_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+    return result.rows;
+  }
+
+  /**
    * List tasks by category
    */
   async listByCategory(

@@ -35,10 +35,14 @@ export class CalendarService {
       const events = response.data.items || [];
       console.log(`📅 Syncing ${events.length} events for account ${accountId}`);
 
+      const syncedGoogleIds: string[] = [];
+
       for (const event of events) {
         if (!event.id || !event.start?.dateTime || !event.end?.dateTime) {
           continue; // Skip all-day events and invalid events
         }
+
+        syncedGoogleIds.push(event.id);
 
         await calendarEventRepository.upsert({
           google_event_id: event.id,
@@ -53,6 +57,18 @@ export class CalendarService {
           attendees: event.attendees ? JSON.stringify(event.attendees) : undefined,
           recurring_rule: event.recurrence?.[0],
         });
+      }
+
+      // Remove local events that were deleted on Google
+      const deleted = await calendarEventRepository.deleteStaleEvents(
+        accountId,
+        timeMin,
+        timeMax,
+        syncedGoogleIds
+      );
+
+      if (deleted > 0) {
+        console.log(`🗑️ Removed ${deleted} deleted event(s) for account ${accountId}`);
       }
 
       console.log(`✓ Synced ${events.length} events for account ${accountId}`);

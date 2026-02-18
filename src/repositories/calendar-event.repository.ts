@@ -109,6 +109,38 @@ export class CalendarEventRepository {
   }
 
   /**
+   * Delete local events that no longer exist on Google Calendar.
+   * Removes events in the given time range whose google_event_id is NOT in the provided set.
+   */
+  async deleteStaleEvents(
+    accountId: string,
+    startTime: Date,
+    endTime: Date,
+    activeGoogleEventIds: string[]
+  ): Promise<number> {
+    if (activeGoogleEventIds.length === 0) {
+      // If Google returned zero events, delete all local events in range
+      const result = await pool.query(
+        `DELETE FROM calendar_events
+         WHERE account_id = $1
+         AND start_time >= $2 AND start_time <= $3`,
+        [accountId, startTime, endTime]
+      );
+      return result.rowCount ?? 0;
+    }
+
+    const placeholders = activeGoogleEventIds.map((_, i) => `$${i + 4}`).join(', ');
+    const result = await pool.query(
+      `DELETE FROM calendar_events
+       WHERE account_id = $1
+       AND start_time >= $2 AND start_time <= $3
+       AND google_event_id NOT IN (${placeholders})`,
+      [accountId, startTime, endTime, ...activeGoogleEventIds]
+    );
+    return result.rowCount ?? 0;
+  }
+
+  /**
    * Get all auto-blocked events in a date range
    * Used for tracking studio time, workout blocks, etc.
    */
