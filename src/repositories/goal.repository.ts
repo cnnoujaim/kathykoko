@@ -1,5 +1,21 @@
 import { pool } from '../config/database';
 
+let hasEmbeddingColumn: boolean | null = null;
+
+async function checkEmbeddingColumn(): Promise<boolean> {
+  if (hasEmbeddingColumn !== null) return hasEmbeddingColumn;
+  try {
+    const result = await pool.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'cultivation_goals' AND column_name = 'embedding'`
+    );
+    hasEmbeddingColumn = result.rows.length > 0;
+  } catch {
+    hasEmbeddingColumn = false;
+  }
+  return hasEmbeddingColumn;
+}
+
 export interface Goal {
   id: string;
   category: string;
@@ -39,16 +55,27 @@ export class GoalRepository {
       user_id,
     } = input;
 
-    const embeddingValue = embedding ? `[${embedding.join(',')}]` : null;
+    const useEmbedding = await checkEmbeddingColumn();
+
+    if (useEmbedding && embedding) {
+      const embeddingValue = `[${embedding.join(',')}]`;
+      const result = await pool.query(
+        `INSERT INTO cultivation_goals (
+          category, title, description, priority, target_date, success_criteria, embedding, user_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING *`,
+        [category, title, description, priority, target_date, success_criteria, embeddingValue, user_id]
+      );
+      return result.rows[0];
+    }
 
     const result = await pool.query(
       `INSERT INTO cultivation_goals (
-        category, title, description, priority, target_date, success_criteria, embedding, user_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        category, title, description, priority, target_date, success_criteria, user_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING *`,
-      [category, title, description, priority, target_date, success_criteria, embeddingValue, user_id]
+      [category, title, description, priority, target_date, success_criteria, user_id]
     );
-
     return result.rows[0];
   }
 
@@ -83,6 +110,22 @@ export class GoalRepository {
   }
 
   async findSimilar(embedding: number[], limit: number = 5, userId?: string): Promise<Array<Goal & { similarity: number }>> {
+    const useEmbedding = await checkEmbeddingColumn();
+
+    if (!useEmbedding) {
+      // Fallback: return all active goals (no vector search)
+      const userFilter = userId ? ' AND user_id = $1' : '';
+      const params: (string | number)[] = userId ? [userId, limit] : [limit];
+      const limitParam = userId ? '$2' : '$1';
+      const result = await pool.query(
+        `SELECT *, 0.5 as similarity FROM cultivation_goals
+         WHERE is_active = true${userFilter}
+         ORDER BY priority ASC LIMIT ${limitParam}`,
+        params
+      );
+      return result.rows;
+    }
+
     const embeddingValue = `[${embedding.join(',')}]`;
     const userFilter = userId ? ' AND user_id = $3' : '';
     const params: (string | number)[] = [embeddingValue, limit];
@@ -135,6 +178,9 @@ export class GoalRepository {
   }
 
   async updateEmbedding(id: string, embedding: number[]): Promise<void> {
+    const useEmbedding = await checkEmbeddingColumn();
+    if (!useEmbedding) return;
+
     const embeddingValue = `[${embedding.join(',')}]`;
     await pool.query(
       'UPDATE cultivation_goals SET embedding = $1, updated_at = NOW() WHERE id = $2',

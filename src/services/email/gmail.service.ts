@@ -12,6 +12,7 @@ interface GmailMessage {
   subject: string;
   snippet: string;
   bodyPreview: string;
+  body: string;
   labels: string[];
   date: Date;
   isRead: boolean;
@@ -63,6 +64,7 @@ export class GmailService {
           subject: parsed.subject,
           snippet: parsed.snippet,
           body_preview: parsed.bodyPreview,
+          body: parsed.body,
           labels: parsed.labels,
           is_read: parsed.isRead,
           received_at: parsed.date,
@@ -88,8 +90,7 @@ export class GmailService {
     const response = await gmail.users.messages.get({
       userId: 'me',
       id: messageId,
-      format: 'metadata',
-      metadataHeaders: ['From', 'To', 'Cc', 'Subject', 'Date'],
+      format: 'full',
     });
 
     const message = response.data;
@@ -105,14 +106,12 @@ export class GmailService {
     const subject = getHeader('Subject');
     const dateStr = getHeader('Date');
 
-    // Get body preview (first ~500 chars of text)
-    let bodyPreview = message.snippet || '';
+    // Extract full text body
+    let fullBody = '';
     if (message.payload) {
-      const textBody = this.extractTextBody(message.payload);
-      if (textBody) {
-        bodyPreview = textBody.substring(0, 500);
-      }
+      fullBody = this.extractTextBody(message.payload);
     }
+    const bodyPreview = fullBody ? fullBody.substring(0, 500) : (message.snippet || '');
 
     return {
       id: message.id,
@@ -123,6 +122,7 @@ export class GmailService {
       subject,
       snippet: message.snippet || '',
       bodyPreview,
+      body: fullBody,
       labels: message.labelIds || [],
       date: dateStr ? new Date(dateStr) : new Date(),
       isRead: !(message.labelIds || []).includes('UNREAD'),

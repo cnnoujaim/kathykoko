@@ -118,12 +118,15 @@ export class GhostwriterService {
 
     const config = PERSONAS[persona];
 
+    // Use full body when available, fall back to preview/snippet. Cap at 5000 chars to avoid token waste.
+    const emailBody = (email.body || email.body_preview || email.snippet || '').substring(0, 5000);
+
     const prompt = `Draft a reply to this email.
 
 FROM: ${email.from_address}
 SUBJECT: ${email.subject}
 BODY:
-${email.body_preview || email.snippet}
+${emailBody}
 
 ---
 Write a reply as ${config.name} (${config.role}).

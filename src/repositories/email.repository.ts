@@ -11,6 +11,7 @@ export interface Email {
   subject: string;
   snippet: string;
   body_preview: string;
+  body: string | null;
   labels: string[];
   is_urgent: boolean;
   urgency_reason: string | null;
@@ -33,6 +34,7 @@ export interface CreateEmailInput {
   subject: string;
   snippet?: string;
   body_preview?: string;
+  body?: string;
   labels?: string[];
   is_urgent?: boolean;
   urgency_reason?: string;
@@ -45,15 +47,16 @@ export class EmailRepository {
     const result = await pool.query(
       `INSERT INTO emails (
         gmail_message_id, gmail_thread_id, account_id, from_address,
-        to_addresses, cc_addresses, subject, snippet, body_preview,
+        to_addresses, cc_addresses, subject, snippet, body_preview, body,
         labels, is_urgent, urgency_reason, is_read, received_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       ON CONFLICT (gmail_message_id)
       DO UPDATE SET
-        labels = $10,
-        is_urgent = $11,
-        urgency_reason = $12,
-        is_read = $13,
+        labels = $11,
+        is_urgent = $12,
+        urgency_reason = $13,
+        is_read = $14,
+        body = COALESCE($10, emails.body),
         updated_at = NOW()
       RETURNING *`,
       [
@@ -66,6 +69,7 @@ export class EmailRepository {
         input.subject,
         input.snippet,
         input.body_preview,
+        input.body || null,
         input.labels || [],
         input.is_urgent || false,
         input.urgency_reason,
