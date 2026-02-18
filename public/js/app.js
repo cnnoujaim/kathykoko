@@ -90,6 +90,7 @@
       if (tab === 'tasks') loadTasks();
       if (tab === 'calendar') loadCalendar();
       if (tab === 'email') loadEmail();
+      if (tab === 'goals') loadGoals();
       if (tab === 'status') loadKillswitch();
       if (tab === 'settings') loadSettings();
     });
@@ -149,9 +150,12 @@
         addChatBubble('Error: ' + data.error, 'received', new Date().toISOString());
       }
 
-      // Auto-refresh tasks panel if a task was just created
+      // Auto-refresh panels based on what was just created
       if (data.messageType === 'task' || data.messageType === 'action' || data.messageType === 'email_scan') {
         loadTasks();
+      }
+      if (data.messageType === 'goals') {
+        loadGoals();
       }
     } catch (err) {
       hideTyping();
@@ -393,6 +397,134 @@
     }
     if (text) {
       text.textContent = hours.toFixed(1) + ' / 40h';
+    }
+  }
+
+  // ---- Goals ----
+  async function loadGoals() {
+    const content = document.getElementById('goals-content');
+    content.innerHTML = '<div class="loading">Loading goals...</div>';
+
+    try {
+      const res = await fetch(API + '/api/goals');
+      const data = await res.json();
+
+      if (!data.hasGoals || data.goals.length === 0) {
+        content.innerHTML =
+          '<div class="goals-empty">' +
+            '<div class="goals-empty-icon">&#127919;</div>' +
+            '<h3>No goals set yet</h3>' +
+            '<p>Chat with Kathy to set up your goals. Try saying:</p>' +
+            '<p class="goals-empty-prompt">"Help me set up my goals"</p>' +
+          '</div>';
+        return;
+      }
+
+      // Group goals by category
+      const grouped = {};
+      data.goals.forEach(function (goal) {
+        if (!grouped[goal.category]) grouped[goal.category] = [];
+        grouped[goal.category].push(goal);
+      });
+
+      content.innerHTML = '';
+
+      Object.entries(grouped).forEach(function (entry) {
+        var category = entry[0];
+        var goals = entry[1];
+        var section = document.createElement('div');
+        section.className = 'goals-category';
+
+        // Find category color
+        var catColor = '';
+        var cat = userCategories.find(function (c) { return c.name === category; });
+        if (cat && cat.color) catColor = cat.color;
+
+        var html = '<div class="goals-category-header">' +
+          (catColor ? '<span class="cat-dot" style="background:' + catColor + '"></span>' : '') +
+          '<span>' + category.charAt(0).toUpperCase() + category.slice(1) + '</span>' +
+          '</div>';
+
+        goals.forEach(function (goal) {
+          var pct = goal.progress.milestoneProgress;
+          var dueStr = goal.target_date
+            ? new Date(goal.target_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            : '';
+          var priorityLabel = goal.priority === 1 ? 'P1' : goal.priority === 2 ? 'P2' : 'P3';
+
+          html += '<div class="goal-card">' +
+            '<div class="goal-header">' +
+              '<div class="goal-title">' + escapeHtml(goal.title) + '</div>' +
+              '<span class="goal-priority p' + goal.priority + '">' + priorityLabel + '</span>' +
+            '</div>' +
+            (goal.description ? '<div class="goal-description">' + escapeHtml(goal.description) + '</div>' : '') +
+            '<div class="goal-progress-bar"><div class="goal-progress-fill" style="width:' + pct + '%"></div></div>' +
+            '<div class="goal-meta">' +
+              '<span>' + pct + '% complete</span>' +
+              (goal.progress.alignedTasksCompleted > 0 ? '<span>' + goal.progress.alignedTasksCompleted + ' aligned tasks done</span>' : '') +
+              (dueStr ? '<span>Due ' + dueStr + '</span>' : '') +
+            '</div>';
+
+          // Milestones
+          if (goal.milestones && goal.milestones.length > 0) {
+            html += '<div class="goal-milestones">';
+            goal.milestones.forEach(function (m) {
+              html += '<div class="milestone-item' + (m.is_completed ? ' completed' : '') + '">' +
+                '<div class="milestone-check" data-id="' + m.id + '"></div>' +
+                '<span>' + escapeHtml(m.title) + '</span>' +
+                '</div>';
+            });
+            html += '</div>';
+          }
+
+          // Add milestone input
+          html += '<div class="milestone-add">' +
+            '<input type="text" class="milestone-input" data-goal-id="' + goal.id + '" placeholder="Add milestone..." autocomplete="off">' +
+            '</div>';
+
+          // Delete button
+          html += '<div class="goal-actions">' +
+            '<button class="goal-delete-btn" data-id="' + goal.id + '">Delete Goal</button>' +
+            '</div>';
+
+          html += '</div>';
+        });
+
+        section.innerHTML = html;
+        content.appendChild(section);
+      });
+
+      // Bind milestone toggle handlers
+      content.querySelectorAll('.milestone-check').forEach(function (el) {
+        el.addEventListener('click', async function () {
+          await fetch(API + '/api/goals/milestones/' + el.dataset.id + '/toggle', { method: 'PATCH' });
+          loadGoals();
+        });
+      });
+
+      // Bind milestone add on Enter
+      content.querySelectorAll('.milestone-input').forEach(function (input) {
+        input.addEventListener('keydown', async function (e) {
+          if (e.key === 'Enter' && input.value.trim()) {
+            await fetch(API + '/api/goals/' + input.dataset.goalId + '/milestones', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ title: input.value.trim() }),
+            });
+            loadGoals();
+          }
+        });
+      });
+
+      // Bind delete handlers
+      content.querySelectorAll('.goal-delete-btn').forEach(function (btn) {
+        btn.addEventListener('click', async function () {
+          await fetch(API + '/api/goals/' + btn.dataset.id, { method: 'DELETE' });
+          loadGoals();
+        });
+      });
+    } catch (err) {
+      content.innerHTML = '<div class="empty-state">Failed to load goals</div>';
     }
   }
 

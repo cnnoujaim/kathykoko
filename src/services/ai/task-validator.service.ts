@@ -5,35 +5,39 @@ import { claudeService } from './claude.service';
 
 export class TaskValidatorService {
   /**
-   * Validate a task against 2026 cultivation goals
+   * Validate a task against the user's goals
    */
-  async validate(task: ParsedTask): Promise<ValidationResult> {
+  async validate(task: ParsedTask, userId?: string): Promise<ValidationResult> {
     try {
       // 1. Generate embedding for the task
       const taskText = `${task.title}. ${task.description || ''}`;
       const taskEmbedding = await embeddingsService.generateEmbedding(taskText);
 
-      // 2. Find similar goals using vector search
-      const similarGoals = await goalRepository.findSimilar(taskEmbedding, 3);
+      // 2. Find similar goals using vector search (scoped to user)
+      const similarGoals = await goalRepository.findSimilar(taskEmbedding, 3, userId);
 
       if (similarGoals.length === 0) {
-        // No goals in database yet
         return {
           alignmentScore: 0.5,
           needsClarification: false,
-          reasoning: 'No goals found in database. Please run npm run seed to load goals.',
+          reasoning: 'No goals set yet. Set up your goals to get task alignment scoring.',
           isValid: true,
         };
       }
 
-      // 3. Use Claude to determine alignment and generate reasoning
+      // 3. Build dynamic goal context
       const goalsContext = similarGoals
         .map((g) => `- ${g.title} (similarity: ${(g.similarity * 100).toFixed(1)}%)`)
         .join('\n');
 
-      const prompt = `You are Kathy Koko, an AI Chief of Staff helping a triple-threat user: Senior MLE (Lyra), Independent Musician (Persephone album), and Homeowner (The Sanctuary).
+      // Get all user goals for high-level context
+      const allGoals = await goalRepository.findAll(userId);
+      const goalSummary = allGoals
+        .filter(g => g.priority <= 2)
+        .map(g => `${g.title} [${g.category}]`)
+        .join(', ');
 
-Evaluate this task against the user's 2026 "BLOOM" goals:
+      const prompt = `You are Kathy Koko, an AI Chief of Staff. Evaluate this task against the user's goals.
 
 **Task:** ${task.title}
 **Description:** ${task.description || 'No description provided'}
@@ -42,7 +46,7 @@ Evaluate this task against the user's 2026 "BLOOM" goals:
 **Most Similar Goals:**
 ${goalsContext}
 
-**2026 Goals Theme:** BLOOM - Tending to roots to support the bloom. Focus on completing the Persephone album, maintaining 40-hour work weeks at Lyra, building health/performance stamina, and completing home renovations by July 1.
+**User's Top Goals:** ${goalSummary || 'None set'}
 
 Return JSON:
 {
@@ -54,11 +58,11 @@ Return JSON:
 }
 
 **Scoring Guide:**
-- 0.8-1.0: Directly advances a P1 goal (album completion, 40-hr cap, July 1 deadline)
+- 0.8-1.0: Directly advances a priority 1 goal
 - 0.5-0.7: Supports a goal but not critical path
 - 0.0-0.4: Low value, distraction, or busywork
 
-**Pushback Philosophy:** Kathy is ruthless about protecting time for what matters. If a task doesn't clearly advance album, health, or July 1 renovations, score it low.`;
+**Philosophy:** Ruthlessly protect the user's time for what matters most. Score low if a task doesn't clearly advance their stated goals.`;
 
       const response = await claudeService.completeJSON<{
         alignmentScore: number;
@@ -78,7 +82,6 @@ Return JSON:
     } catch (error) {
       console.error('Task validation error:', error);
 
-      // Fallback: Allow task but flag for manual review
       return {
         alignmentScore: 0.5,
         needsClarification: false,

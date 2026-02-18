@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { dashboardController } from '../controllers/dashboard.controller';
 import { categoryController } from '../controllers/category.controller';
+import { goalController } from '../controllers/goal.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
 
 const router = Router();
@@ -23,5 +24,14 @@ router.get('/categories', (req, res) => categoryController.list(req, res));
 router.post('/categories', (req, res) => categoryController.create(req, res));
 router.put('/categories/:id', (req, res) => categoryController.update(req, res));
 router.delete('/categories/:id', (req, res) => categoryController.remove(req, res));
+
+// Goals CRUD + milestones
+router.get('/goals', (req, res) => goalController.list(req, res));
+router.post('/goals', (req, res) => goalController.create(req, res));
+router.post('/goals/generate', (req, res) => goalController.generate(req, res));
+router.put('/goals/:id', (req, res) => goalController.update(req, res));
+router.delete('/goals/:id', (req, res) => goalController.remove(req, res));
+router.post('/goals/:id/milestones', (req, res) => goalController.addMilestone(req, res));
+router.patch('/goals/milestones/:id/toggle', (req, res) => goalController.toggleMilestone(req, res));
 
 export default router;

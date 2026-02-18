@@ -10,9 +10,12 @@ import { eveningCheckinService } from '../briefing/evening-checkin.service';
 import { healthCheckinRepository } from '../../repositories/health-checkin.repository';
 import { actionService } from '../sms/action.service';
 import { emailTodoService } from '../email/email-todo.service';
+import { goalRepository } from '../../repositories/goal.repository';
+import { goalMilestoneRepository } from '../../repositories/goal-milestone.repository';
+import { embeddingsService } from '../ai/embeddings.service';
 import { pool } from '../../config/database';
 
-export type MessageType = 'query' | 'task' | 'killswitch' | 'action' | 'checkin' | 'email_scan';
+export type MessageType = 'query' | 'task' | 'killswitch' | 'action' | 'checkin' | 'email_scan' | 'goals';
 
 export interface ChatResponse {
   response: string;
@@ -35,6 +38,18 @@ export async function classifyMessage(body: string): Promise<MessageType> {
     lower === 'emails'
   ) {
     return 'email_scan';
+  }
+
+  // Fast path: goal setup/onboarding
+  if (
+    (lower.includes('set') && lower.includes('goal')) ||
+    (lower.includes('my goal') && !lower.startsWith('what')) ||
+    lower.includes('goal onboarding') ||
+    (lower.includes('help') && lower.includes('goal')) ||
+    (lower.includes('plan') && lower.includes('goal')) ||
+    lower === 'goals'
+  ) {
+    return 'goals';
   }
 
   // Fast path: killswitch-specific queries
@@ -180,6 +195,11 @@ export async function processMessage(body: string, messageSid?: string, userId?:
     return { response, messageType: 'email_scan' };
   }
 
+  if (messageType === 'goals') {
+    const response = await handleGoalOnboarding(body, userId);
+    return { response, messageType: 'goals' };
+  }
+
   // Task creation flow — supports multiple tasks from one message
   console.log(`🤖 Parsing SMS with Claude: "${body}"`);
   const parsedTasks = await messageParserService.parse(body);
@@ -221,7 +241,7 @@ export async function processMessage(body: string, messageSid?: string, userId?:
 
     // Validate task against goals
     console.log(`🎯 Validating "${parsedTask.title}" against goals...`);
-    const validation = await taskValidatorService.validate(parsedTask);
+    const validation = await taskValidatorService.validate(parsedTask, userId);
     console.log(`✓ Validation: score=${validation.alignmentScore.toFixed(2)}, valid=${validation.isValid}`);
 
     if (validation.needsClarification) {
@@ -356,6 +376,130 @@ export async function processMessage(body: string, messageSid?: string, userId?:
   }
 
   return { response, messageType: 'task' };
+}
+
+/**
+ * Handle goal-related messages in chat.
+ * If user has no goals, prompt onboarding.
+ * If user describes goals for a category, generate and save them.
+ */
+async function handleGoalOnboarding(body: string, userId?: string): Promise<string> {
+  if (!userId) {
+    return "I'd love to help you set up goals! Please log in first so I can save them for you.";
+  }
+
+  const existingGoals = await goalRepository.findAll(userId);
+
+  // Get user's categories
+  const catResult = await pool.query(
+    'SELECT name FROM categories WHERE user_id = $1 ORDER BY sort_order ASC',
+    [userId]
+  );
+  const categories = catResult.rows.map((r: { name: string }) => r.name);
+  const categoryList = categories.length > 0 ? categories.join(', ') : 'work, personal, home';
+
+  const lower = body.toLowerCase().trim();
+
+  // If they just said "goals" or "set up my goals", give them the intro
+  if (lower === 'goals' || lower.includes('set up') || lower.includes('onboarding') || existingGoals.length === 0) {
+    const intro = existingGoals.length === 0
+      ? `Let's set up your goals! I'll help you create measurable goals for each area of your life.`
+      : `You have ${existingGoals.length} goals set up. Want to add more?`;
+
+    return `${intro}\n\nTell me what you want to achieve in one of your areas: ${categoryList}.\n\nFor example: "For work, I want to get promoted to senior engineer by end of year" or "For personal, I want to run a half marathon."\n\nThink about outcomes you can measure — results that lead to a larger objective.`;
+  }
+
+  // Otherwise, they're describing goals — use Claude to generate them
+  // Try to detect which category they're talking about
+  let detectedCategory = '';
+  for (const cat of categories) {
+    if (lower.includes(`for ${cat}`) || lower.includes(`${cat}:`)) {
+      detectedCategory = cat;
+      break;
+    }
+  }
+
+  // Ask Claude to generate goals
+  try {
+    const result = await claudeService.completeJSON<{
+      category: string;
+      goals: Array<{
+        title: string;
+        description: string;
+        success_criteria: string;
+        target_date: string;
+        priority: number;
+        milestones: string[];
+      }>;
+    }>(
+      `The user wants to set goals. Their available categories are: ${categoryList}.
+${detectedCategory ? `They are talking about the "${detectedCategory}" category.` : 'Detect which category they mean from their message.'}
+
+User's message: "${body}"
+
+Generate 1-3 SMART goals based on what they said. Each goal should be:
+- Specific and measurable
+- Have a clear target date (YYYY-MM-DD format, within the next 12 months from today, February 2026)
+- Include 2-4 concrete milestones that are stepping stones to the goal
+
+Return JSON:
+{
+  "category": "the category name",
+  "goals": [
+    {
+      "title": "Clear, specific goal title",
+      "description": "What this goal means and why it matters",
+      "success_criteria": "How they'll know they achieved it — specific metrics or outcomes",
+      "target_date": "YYYY-MM-DD",
+      "priority": 1,
+      "milestones": ["First milestone", "Second milestone", "Third milestone"]
+    }
+  ]
+}`,
+      'You are Kathy Koko, an AI Chief of Staff. Generate ambitious but achievable goals focused on measurable outcomes, not activities. Keep titles concise.',
+      1024
+    );
+
+    // Save the generated goals
+    const savedGoals = [];
+    for (const g of result.goals) {
+      const embedding = await embeddingsService.generateEmbedding(`${g.title}. ${g.description}`);
+      const goal = await goalRepository.create({
+        title: g.title,
+        description: g.description,
+        category: result.category,
+        priority: g.priority,
+        target_date: new Date(g.target_date),
+        success_criteria: g.success_criteria,
+        embedding,
+        user_id: userId,
+      });
+
+      for (let i = 0; i < g.milestones.length; i++) {
+        await goalMilestoneRepository.create(goal.id, g.milestones[i], i);
+      }
+
+      savedGoals.push(g);
+    }
+
+    // Format response
+    let response = `Great! I've created ${savedGoals.length} goal${savedGoals.length > 1 ? 's' : ''} for ${result.category}:\n\n`;
+    savedGoals.forEach((g, i) => {
+      response += `${i + 1}. ${g.title}\n`;
+      response += `   Target: ${new Date(g.target_date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}\n`;
+      response += `   Milestones:\n`;
+      g.milestones.forEach(m => {
+        response += `   - ${m}\n`;
+      });
+      response += '\n';
+    });
+
+    response += `Check the Goals tab to see them! Want to set goals for another area? (${categoryList})`;
+    return response;
+  } catch (error) {
+    console.error('Goal generation error:', error);
+    return "I had trouble generating goals from that. Can you try describing what you want to achieve in a specific area? For example: \"For work, I want to...\"";
+  }
 }
 
 export const chatProcessingService = { classifyMessage, processMessage };
