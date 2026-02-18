@@ -431,9 +431,7 @@
   // ---- Calendar (Week Grid) ----
   var calendarList = document.getElementById('calendar-list');
   var calendarWeekOffset = 0;
-  var CAL_START_HOUR = 7;
-  var CAL_END_HOUR = 21;
-  var CAL_HOUR_HEIGHT = 48;
+  var CAL_HOUR_HEIGHT = 44;
 
   var eventTypeColors = {
     work: '#b8c0ff',
@@ -522,6 +520,18 @@
         dayBuckets[dayIdx].push(ev);
       });
 
+      // Compute visible hour range from events (default 8am-8pm, expand as needed)
+      var CAL_START_HOUR = 8;
+      var CAL_END_HOUR = 20;
+      events.forEach(function (ev) {
+        var s = new Date(ev.start_time);
+        var e = new Date(ev.end_time);
+        var sh = s.getHours();
+        var eh = e.getHours() + (e.getMinutes() > 0 ? 1 : 0);
+        if (sh < CAL_START_HOUR) CAL_START_HOUR = sh;
+        if (eh > CAL_END_HOUR) CAL_END_HOUR = Math.min(eh, 24);
+      });
+
       // Build grid HTML
       var totalHeight = (CAL_END_HOUR - CAL_START_HOUR) * CAL_HOUR_HEIGHT;
       var dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -587,6 +597,8 @@
           var startH = s.getHours() + s.getMinutes() / 60;
           var endH = e.getHours() + e.getMinutes() / 60;
 
+          // Handle events spanning past midnight (endH wraps around)
+          if (endH <= startH) endH = CAL_END_HOUR;
           // Clamp to visible range
           if (endH <= CAL_START_HOUR || startH >= CAL_END_HOUR) return;
           startH = Math.max(startH, CAL_START_HOUR);
