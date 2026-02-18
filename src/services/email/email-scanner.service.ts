@@ -2,6 +2,7 @@ import { claudeService } from '../ai/claude.service';
 import { emailRepository, Email } from '../../repositories/email.repository';
 import { gmailService } from './gmail.service';
 import { ghostwriterService } from './ghostwriter.service';
+import { emailTodoService } from './email-todo.service';
 import { smsService } from '../sms/sms.service';
 import { config } from '../../config';
 import { pool } from '../../config/database';
@@ -62,7 +63,20 @@ export class EmailScannerService {
       }
     }
 
-    // 4. Notify via SMS if there are urgent emails
+    // 4. Extract todos from new emails
+    if (totalSynced > 0) {
+      try {
+        const recentEmails = await emailRepository.findRecent(totalSynced);
+        const todoResult = await emailTodoService.extractTodos(recentEmails);
+        if (todoResult.created > 0) {
+          console.log(`📋 Created ${todoResult.created} todo(s) from emails`);
+        }
+      } catch (error) {
+        console.error('Email todo extraction failed:', error);
+      }
+    }
+
+    // 5. Notify via SMS if there are urgent emails
     if (totalUrgent > 0) {
       const urgentEmails = await emailRepository.findUrgentUnread();
       const summary = urgentEmails.slice(0, 3).map((e) =>

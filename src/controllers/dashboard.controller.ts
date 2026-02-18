@@ -240,6 +240,27 @@ class DashboardController {
   }
 
   /**
+   * GET /api/email-todos - Tasks created from email scanning
+   */
+  async getEmailTodos(req: Request, res: Response): Promise<void> {
+    try {
+      const limit = parseInt(req.query.limit as string) || 50;
+      const result = await pool.query(
+        `SELECT id, parsed_title, description, category, priority, status, due_date, created_at
+         FROM tasks
+         WHERE created_from_message_sid LIKE 'email-%'
+         ORDER BY created_at DESC
+         LIMIT $1`,
+        [limit]
+      );
+      res.json({ todos: result.rows });
+    } catch (error) {
+      console.error('Email todos error:', error);
+      res.status(500).json({ error: 'Failed to load email todos' });
+    }
+  }
+
+  /**
    * GET /api/killswitch - Killswitch status
    */
   async getKillswitch(_req: Request, res: Response): Promise<void> {

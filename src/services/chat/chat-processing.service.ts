@@ -9,9 +9,10 @@ import { claudeService } from '../ai/claude.service';
 import { eveningCheckinService } from '../briefing/evening-checkin.service';
 import { healthCheckinRepository } from '../../repositories/health-checkin.repository';
 import { actionService } from '../sms/action.service';
+import { emailTodoService } from '../email/email-todo.service';
 import { pool } from '../../config/database';
 
-export type MessageType = 'query' | 'task' | 'killswitch' | 'action' | 'checkin';
+export type MessageType = 'query' | 'task' | 'killswitch' | 'action' | 'checkin' | 'email_scan';
 
 export interface ChatResponse {
   response: string;
@@ -22,8 +23,19 @@ export interface ChatResponse {
  * Classify a message into one of: query, task, killswitch, action.
  * Uses fast keyword matching first, then Claude for ambiguous cases.
  */
-export async function classifyMessage(body: string): Promise<'query' | 'task' | 'killswitch' | 'action'> {
+export async function classifyMessage(body: string): Promise<MessageType> {
   const lower = body.toLowerCase().trim();
+
+  // Fast path: email scan requests
+  if (
+    (lower.includes('scan') && lower.includes('email')) ||
+    (lower.includes('email') && lower.includes('todo')) ||
+    (lower.includes('check') && lower.includes('email') && lower.includes('task')) ||
+    lower.includes('email action items') ||
+    lower === 'emails'
+  ) {
+    return 'email_scan';
+  }
 
   // Fast path: killswitch-specific queries
   if (
@@ -152,6 +164,11 @@ export async function processMessage(body: string, messageSid?: string): Promise
   if (messageType === 'action') {
     const response = await actionService.execute(body);
     return { response, messageType: 'action' };
+  }
+
+  if (messageType === 'email_scan') {
+    const response = await emailTodoService.scanAndReport();
+    return { response, messageType: 'email_scan' };
   }
 
   // Task creation flow
