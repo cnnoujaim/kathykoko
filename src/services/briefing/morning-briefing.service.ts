@@ -16,8 +16,8 @@ export class MorningBriefingService {
 
   async generateBriefing(): Promise<string> {
     const now = new Date();
-    const dayName = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'America/New_York' });
-    const dateStr = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'America/New_York' });
+    const dayName = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'America/Los_Angeles' });
+    const dateStr = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'America/Los_Angeles' });
 
     const [todayEvents, urgentTasks, killswitch, urgentEmails, pendingDrafts] = await Promise.all([
       this.getTodayEvents(),
@@ -38,7 +38,7 @@ export class MorningBriefingService {
       parts.push(`CALENDAR (${todayEvents.length} events):`);
       for (const e of todayEvents) {
         const start = new Date(e.start_time);
-        const time = start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
+        const time = start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' });
         const tag = e.account_type === 'lyra' ? '[Lyra]' : e.account_type === 'music' ? '[Music]' : '';
         const loc = e.location ? ` @ ${e.location}` : '';
         parts.push(`  ${time} - ${e.title} ${tag}${loc}`);
@@ -62,7 +62,7 @@ export class MorningBriefingService {
       parts.push(`TASKS (${urgentTasks.length} priority):`);
       for (const t of urgentTasks.slice(0, 5)) {
         const due = t.due_date
-          ? ` (due ${new Date(t.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' })})`
+          ? ` (due ${new Date(t.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Los_Angeles' })})`
           : '';
         parts.push(`  [${t.priority}] ${t.parsed_title}${due}`);
       }

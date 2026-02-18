@@ -13,7 +13,7 @@ export class QueryService {
   async answer(question: string): Promise<string> {
     const now = new Date();
     const currentDateTime = now.toLocaleString('en-US', {
-      timeZone: 'America/New_York',
+      timeZone: 'America/Los_Angeles',
       weekday: 'long',
       year: 'numeric',
       month: 'long',
@@ -36,7 +36,7 @@ You answer questions about her schedule, tasks, calendar, and emails concisely v
 Keep responses under 300 characters when possible. Be direct, warm, and practical.
 Use simple formatting (no markdown). You can use emojis sparingly.`;
 
-    const prompt = `CURRENT DATE/TIME: ${currentDateTime} (EST)
+    const prompt = `CURRENT DATE/TIME: ${currentDateTime} (Pacific Time)
 
 CALENDAR (next 7 days):
 ${upcomingEvents || 'No upcoming events.'}
@@ -75,9 +75,9 @@ Answer the question based on the context above. Be concise (SMS format). If you 
     return result.rows.map((e: any) => {
       const start = new Date(e.start_time);
       const end = new Date(e.end_time);
-      const day = start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York' });
-      const startTime = start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
-      const endTime = end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
+      const day = start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/Los_Angeles' });
+      const startTime = start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' });
+      const endTime = end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' });
       const loc = e.location ? ` @ ${e.location}` : '';
       return `- ${day} ${startTime}-${endTime}: ${e.title} [${e.account_type}]${loc}`;
     }).join('\n');
@@ -97,7 +97,7 @@ Answer the question based on the context above. Be concise (SMS format). If you 
     if (result.rows.length === 0) return '';
 
     return result.rows.map((t: any) => {
-      const due = t.due_date ? ` (due ${new Date(t.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' })})` : '';
+      const due = t.due_date ? ` (due ${new Date(t.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Los_Angeles' })})` : '';
       const hours = t.estimated_hours ? ` ~${t.estimated_hours}h` : '';
       return `- [${t.priority}] ${t.parsed_title} [${t.category}]${due}${hours} - ${t.status}`;
     }).join('\n');

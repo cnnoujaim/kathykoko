@@ -13,7 +13,7 @@ export function scheduleBriefings() {
     'morning-briefing',
     {},
     {
-      repeat: { cron: '30 7 * * *', tz: 'America/New_York' },
+      repeat: { cron: '30 7 * * *', tz: 'America/Los_Angeles' },
       jobId: 'morning-briefing-daily',
     }
   );
@@ -23,12 +23,12 @@ export function scheduleBriefings() {
     'evening-checkin',
     {},
     {
-      repeat: { cron: '0 20 * * *', tz: 'America/New_York' },
+      repeat: { cron: '0 20 * * *', tz: 'America/Los_Angeles' },
       jobId: 'evening-checkin-daily',
     }
   );
 
-  console.log('✓ Daily briefings scheduled (7:30 AM + 8:00 PM EST)');
+  console.log('✓ Daily briefings scheduled (7:30 AM + 8:00 PM Pacific)');
 }
 
 // Worker for morning briefing

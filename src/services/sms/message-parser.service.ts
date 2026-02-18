@@ -6,12 +6,12 @@ export class MessageParserService {
    * Parse incoming SMS into structured task using Claude
    */
   async parse(rawSMS: string): Promise<ParsedTask> {
-    // Get current date for context
+    // Get current date/time in Eastern timezone (server may run in UTC)
     const now = new Date();
-    const currentDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
-    const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+    const currentDate = now.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }); // YYYY-MM-DD
+    const currentDay = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'America/Los_Angeles' });
     const currentDateTime = now.toLocaleString('en-US', {
-      timeZone: 'America/New_York',
+      timeZone: 'America/Los_Angeles',
       weekday: 'long',
       year: 'numeric',
       month: 'long',
@@ -23,7 +23,7 @@ export class MessageParserService {
 
     const prompt = `Parse this SMS into a structured task. Return ONLY valid JSON, no markdown.
 
-CURRENT DATE/TIME: ${currentDateTime} (EST)
+CURRENT DATE/TIME: ${currentDateTime} (Pacific Time)
 Today is: ${currentDay}, ${currentDate}
 
 SMS: "${rawSMS}"
@@ -46,7 +46,7 @@ Rules:
 - If SMS uses words like "ASAP", "urgent", "now", "today" → priority: "urgent"
 - If SMS mentions a deadline → priority: "high"
 - Default priority: "medium"
-- Parse relative dates based on the CURRENT DATE above (e.g., "tomorrow" = ${new Date(now.getTime() + 24*60*60*1000).toISOString().split('T')[0]})`;
+- Parse relative dates based on the CURRENT DATE above (e.g., "tomorrow" = the day after ${currentDate})`;
 
     const systemPrompt = `You are Kathy Koko's SMS parser. Parse user messages into structured tasks.
 Always return valid JSON. Be concise. Infer context from keywords.`;

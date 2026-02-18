@@ -69,8 +69,8 @@ export class ActionService {
 
   private async parseAction(body: string): Promise<ParsedAction | null> {
     const now = new Date();
-    const currentDate = now.toISOString().split('T')[0];
-    const currentDay = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'America/New_York' });
+    const currentDate = now.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+    const currentDay = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'America/Los_Angeles' });
 
     const prompt = `Parse this SMS into a management action. TODAY is ${currentDay}, ${currentDate}.
 
@@ -199,7 +199,7 @@ Only include fields that are relevant. Return JSON only.`;
     try {
       await calendarService.deleteEvent(event.account_id, event.google_event_id);
       const dateStr = new Date(event.start_time).toLocaleDateString('en-US', {
-        weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York'
+        weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/Los_Angeles'
       });
       return `Cancelled "${event.title}" on ${dateStr}.`;
     } catch {
@@ -238,10 +238,10 @@ Only include fields that are relevant. Return JSON only.`;
         endTime: newEnd,
       });
       const dateStr = newStart.toLocaleDateString('en-US', {
-        weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York'
+        weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/Los_Angeles'
       });
       const timeStr = newStart.toLocaleTimeString('en-US', {
-        hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York'
+        hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles'
       });
       return `Rescheduled "${event.title}" to ${dateStr} at ${timeStr}.`;
     } catch {
@@ -289,10 +289,10 @@ Only include fields that are relevant. Return JSON only.`;
       );
 
       const dateStr = startTime.toLocaleDateString('en-US', {
-        weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York'
+        weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/Los_Angeles'
       });
       const timeStr = startTime.toLocaleTimeString('en-US', {
-        hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York'
+        hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles'
       });
       return `Added "${title}" to your calendar: ${dateStr} at ${timeStr} (${duration}hr).`;
     } catch {
