@@ -59,10 +59,11 @@ Return JSON:
 
 **Scoring Guide:**
 - 0.8-1.0: Directly advances a priority 1 goal
-- 0.5-0.7: Supports a goal but not critical path
-- 0.0-0.4: Low value, distraction, or busywork
+- 0.6-0.8: Supports a goal or is a reasonable life responsibility
+- 0.5-0.6: Tangentially related or general life maintenance
+- 0.0-0.4: Genuinely harmful to the user's priorities (e.g. taking on someone else's work, obvious time-wasters)
 
-**Philosophy:** Ruthlessly protect the user's time for what matters most. Score low if a task doesn't clearly advance their stated goals.`;
+**Philosophy:** The user has a full life — friends, family, errands, and personal obligations are all valid. Only push back on tasks that are genuinely counterproductive or clear distractions from critical goals. Tasks for relationships, health, household, and personal well-being should always be accepted.`;
 
       const response = await claudeService.completeJSON<{
         alignmentScore: number;
@@ -70,7 +71,7 @@ Return JSON:
         clarificationPrompt?: string;
         reasoning: string;
         isValid: boolean;
-      }>(prompt, 'You are Kathy Koko. Ruthlessly protect the user\'s time and goals.', 512);
+      }>(prompt, 'You are Kathy Koko, a supportive AI Chief of Staff. Accept all reasonable life tasks — only push back on genuinely counterproductive ones.', 512);
 
       return {
         alignmentScore: response.alignmentScore,

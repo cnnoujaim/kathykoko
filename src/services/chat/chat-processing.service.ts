@@ -272,7 +272,7 @@ export async function processMessage(body: string, messageSid?: string, userId?:
       continue;
     }
 
-    if (validation.alignmentScore < 0.5) {
+    if (validation.alignmentScore < 0.3) {
       const pushbackMsg = await pushbackService.generate(parsedTask, validation);
 
       await taskRepository.create({
@@ -371,7 +371,7 @@ export async function processMessage(body: string, messageSid?: string, userId?:
     const desc = parsedTask.description ? ` — ${parsedTask.description}` : '';
     let line = `${parsedTask.title} [${parsedTask.category}]${desc}${conflictWarning}`;
 
-    if (validation.alignmentScore < 0.7 && validation.reasoning) {
+    if (validation.alignmentScore < 0.5 && validation.reasoning) {
       line += ` (Heads up: ${validation.reasoning})`;
     }
 
