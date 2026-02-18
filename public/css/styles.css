@@ -515,15 +515,13 @@ html, body {
   border-radius: 6px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  color: #3a2d4f;
 }
-
-.task-badge.lyra { background: var(--lyra); color: #3a2d4f; }
-.task-badge.music { background: var(--music); color: #3a2d4f; }
-.task-badge.personal { background: var(--personal); color: #3a2d4f; }
-.task-badge.house { background: var(--house); color: #3a2d4f; }
 
 .task-badge.urgent { background: var(--urgent); color: #3a2d4f; }
 .task-badge.high { background: var(--high); color: #3a2d4f; }
+.task-badge.medium { background: var(--periwinkle); color: #3a2d4f; }
+.task-badge.low { background: var(--border); color: #3a2d4f; }
 .task-badge.deferred { background: #fde68a; color: #78350f; }
 
 .task-due {

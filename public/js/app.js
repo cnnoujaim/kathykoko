@@ -3,6 +3,11 @@
   const API = '';
   let userCategories = [];
 
+  function getCategoryColor(name) {
+    var cat = userCategories.find(function (c) { return c.name === name; });
+    return cat && cat.color ? cat.color : '#c8b6ff';
+  }
+
   // ---- Auth Check ----
   async function checkAuth() {
     try {
@@ -229,7 +234,7 @@
           '<div class="task-title">' + escapeHtml(task.parsed_title || task.raw_text) + '</div>' +
           description +
           '<div class="task-meta">' +
-            (task.category ? '<span class="task-badge ' + task.category + '">' + task.category + '</span>' : '') +
+            (task.category ? '<span class="task-badge" style="background:' + getCategoryColor(task.category) + '">' + task.category + '</span>' : '') +
             priorityBadge +
             deferredBadge +
             (dueStr ? '<span class="task-due">' + dueStr + '</span>' : '') +
@@ -740,7 +745,7 @@
           item.innerHTML =
             '<div class="email-todo-title">' + escapeHtml(task.parsed_title || task.description) + '</div>' +
             '<div class="email-todo-meta">' +
-              '<span class="task-badge ' + (task.category || '') + '">' + (task.category || 'email') + '</span>' +
+              '<span class="task-badge" style="background:' + getCategoryColor(task.category || '') + '">' + (task.category || 'email') + '</span>' +
               '<span class="task-badge ' + (task.priority || '') + '">' + (task.priority || 'medium') + '</span>' +
               (task.due_date ? '<span class="task-due">' + new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + '</span>' : '') +
             '</div>';
