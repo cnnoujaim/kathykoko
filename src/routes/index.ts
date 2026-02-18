@@ -6,6 +6,7 @@ import calendarRoutes from './calendar.routes';
 import killswitchRoutes from './killswitch.routes';
 import emailRoutes from './email.routes';
 import briefingRoutes from './briefing.routes';
+import dashboardRoutes from './dashboard.routes';
 
 const router = Router();
 
@@ -17,5 +18,6 @@ router.use('/calendar', calendarRoutes);
 router.use('/killswitch', killswitchRoutes);
 router.use('/email', emailRoutes);
 router.use('/briefing', briefingRoutes);
+router.use('/api', dashboardRoutes);
 
 export default router;

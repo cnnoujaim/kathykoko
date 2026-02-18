@@ -1,6 +1,7 @@
 import express, { Express } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import path from 'path';
 import { requestLogger } from './middleware/logger';
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
 import routes from './routes';
@@ -12,8 +13,21 @@ import './jobs/workers/calendar-sync.worker';
 const app: Express = express();
 
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      connectSrc: ["'self'"],
+      imgSrc: ["'self'", "data:"],
+    },
+  },
+}));
 app.use(cors());
+
+// Static file serving (dashboard)
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // Body parsing
 // IMPORTANT: Twilio sends application/x-www-form-urlencoded

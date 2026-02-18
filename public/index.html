@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Kathy Koko</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header id="header">
+      <h1>Kathy Koko</h1>
+      <span class="subtitle">Chief of Staff</span>
+    </header>
+
+    <!-- Chat Tab -->
+    <section id="tab-chat" class="tab-content active">
+      <div id="chat-messages"></div>
+      <div id="chat-input-area">
+        <input type="text" id="chat-input" placeholder="Message Kathy..." autocomplete="off">
+        <button id="chat-send">Send</button>
+      </div>
+    </section>
+
+    <!-- Tasks Tab -->
+    <section id="tab-tasks" class="tab-content">
+      <div id="task-filters">
+        <button class="filter-pill active" data-filter="all">All</button>
+        <button class="filter-pill" data-filter="lyra">Lyra</button>
+        <button class="filter-pill" data-filter="music">Music</button>
+        <button class="filter-pill" data-filter="personal">Personal</button>
+        <button class="filter-pill" data-filter="house">House</button>
+      </div>
+      <div id="task-list"></div>
+    </section>
+
+    <!-- Calendar Tab -->
+    <section id="tab-calendar" class="tab-content">
+      <div id="calendar-list"></div>
+    </section>
+
+    <!-- Status Tab -->
+    <section id="tab-status" class="tab-content">
+      <div id="killswitch-card">
+        <h2>Lyra Hours This Week</h2>
+        <div id="killswitch-bar-container">
+          <div id="killswitch-bar"></div>
+        </div>
+        <div id="killswitch-label"></div>
+      </div>
+      <div id="status-info"></div>
+    </section>
+
+    <!-- Bottom Navigation -->
+    <nav id="bottom-nav">
+      <button class="nav-btn active" data-tab="chat">
+        <span class="nav-icon">&#128172;</span>
+        <span class="nav-label">Chat</span>
+      </button>
+      <button class="nav-btn" data-tab="tasks">
+        <span class="nav-icon">&#9745;</span>
+        <span class="nav-label">Tasks</span>
+      </button>
+      <button class="nav-btn" data-tab="calendar">
+        <span class="nav-icon">&#128197;</span>
+        <span class="nav-label">Calendar</span>
+      </button>
+      <button class="nav-btn" data-tab="status">
+        <span class="nav-icon">&#128200;</span>
+        <span class="nav-label">Status</span>
+      </button>
+    </nav>
+  </div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
