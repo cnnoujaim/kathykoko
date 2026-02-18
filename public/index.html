@@ -31,6 +31,10 @@
           <span class="nav-icon">&#128197;</span>
           <span class="nav-label">Calendar</span>
         </button>
+        <button class="nav-btn" data-tab="email">
+          <span class="nav-icon">&#9993;</span>
+          <span class="nav-label">Email</span>
+        </button>
         <button class="nav-btn" data-tab="status">
           <span class="nav-icon">&#128200;</span>
           <span class="nav-label">Status</span>
@@ -99,6 +103,23 @@
               <div id="killswitch-label"></div>
             </div>
             <div id="status-info"></div>
+          </div>
+        </div>
+
+        <!-- Email View -->
+        <div id="view-email" class="panel-view">
+          <div class="panel-header">
+            <h2>Email</h2>
+          </div>
+          <div class="panel-body">
+            <div class="email-section">
+              <h3>Drafts Ready to Send</h3>
+              <div id="drafts-list"></div>
+            </div>
+            <div class="email-section">
+              <h3>Action Items from Email</h3>
+              <div id="email-todos-list"></div>
+            </div>
           </div>
         </div>
 

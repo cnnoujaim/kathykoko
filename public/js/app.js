@@ -89,6 +89,7 @@
 
       if (tab === 'tasks') loadTasks();
       if (tab === 'calendar') loadCalendar();
+      if (tab === 'email') loadEmail();
       if (tab === 'status') loadKillswitch();
       if (tab === 'settings') loadSettings();
     });
@@ -392,6 +393,102 @@
     }
     if (text) {
       text.textContent = hours.toFixed(1) + ' / 40h';
+    }
+  }
+
+  // ---- Email & Drafts ----
+  async function loadEmail() {
+    const draftsList = document.getElementById('drafts-list');
+    const todosList = document.getElementById('email-todos-list');
+    draftsList.innerHTML = '<div class="loading">Loading drafts...</div>';
+    todosList.innerHTML = '<div class="loading">Loading...</div>';
+
+    // Load drafts and email todos in parallel
+    try {
+      const [draftsRes, todosRes] = await Promise.all([
+        fetch(API + '/email/drafts'),
+        fetch(API + '/api/email-todos'),
+      ]);
+      const draftsData = await draftsRes.json();
+      const todosData = await todosRes.json();
+
+      // Render drafts
+      if (!draftsData.drafts || draftsData.drafts.length === 0) {
+        draftsList.innerHTML = '<div class="empty-state">No pending drafts</div>';
+      } else {
+        draftsList.innerHTML = '';
+        draftsData.drafts.forEach(draft => {
+          const card = document.createElement('div');
+          card.className = 'draft-card';
+
+          const personaColors = { lyra: '#b8c0ff', music: '#ffd6ff', contractor: '#caffbf' };
+          const personaColor = personaColors[draft.persona] || '#e0e0e0';
+
+          card.innerHTML =
+            '<div class="draft-header">' +
+              '<span class="draft-from">' + escapeHtml(draft.from_address || 'Unknown') + '</span>' +
+              '<span class="draft-persona" style="background:' + personaColor + '">' + draft.persona + '</span>' +
+            '</div>' +
+            '<div class="draft-subject">' + escapeHtml(draft.original_subject || draft.subject || 'No subject') + '</div>' +
+            '<div class="draft-snippet">' + escapeHtml(draft.snippet || '') + '</div>' +
+            '<div class="draft-body">' + escapeHtml(draft.body) + '</div>' +
+            '<div class="draft-actions">' +
+              '<button class="draft-send-btn" data-id="' + draft.id + '">Send</button>' +
+              '<button class="draft-dismiss-btn" data-id="' + draft.id + '">Dismiss</button>' +
+            '</div>';
+
+          draftsList.appendChild(card);
+        });
+
+        // Bind send/dismiss handlers
+        draftsList.querySelectorAll('.draft-send-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            btn.textContent = 'Sending...';
+            try {
+              await fetch(API + '/email/send/' + btn.dataset.id, { method: 'POST' });
+              loadEmail();
+            } catch {
+              btn.textContent = 'Failed';
+              btn.disabled = false;
+            }
+          });
+        });
+
+        draftsList.querySelectorAll('.draft-dismiss-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            try {
+              await fetch(API + '/email/drafts/' + btn.dataset.id + '/dismiss', { method: 'POST' });
+              loadEmail();
+            } catch {
+              btn.disabled = false;
+            }
+          });
+        });
+      }
+
+      // Render email todos
+      if (!todosData.tasks || todosData.tasks.length === 0) {
+        todosList.innerHTML = '<div class="empty-state">No action items from email</div>';
+      } else {
+        todosList.innerHTML = '';
+        todosData.tasks.forEach(task => {
+          const item = document.createElement('div');
+          item.className = 'email-todo-item';
+          item.innerHTML =
+            '<div class="email-todo-title">' + escapeHtml(task.parsed_title || task.description) + '</div>' +
+            '<div class="email-todo-meta">' +
+              '<span class="task-badge ' + (task.category || '') + '">' + (task.category || 'email') + '</span>' +
+              '<span class="task-badge ' + (task.priority || '') + '">' + (task.priority || 'medium') + '</span>' +
+              (task.due_date ? '<span class="task-due">' + new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + '</span>' : '') +
+            '</div>';
+          todosList.appendChild(item);
+        });
+      }
+    } catch {
+      draftsList.innerHTML = '<div class="empty-state">Failed to load email data</div>';
+      todosList.innerHTML = '';
     }
   }
 

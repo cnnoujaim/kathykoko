@@ -81,10 +81,26 @@ class EmailController {
    */
   async listDrafts(req: Request, res: Response): Promise<void> {
     try {
-      const drafts = await emailDraftRepository.findPending();
+      const userId = req.user?.userId;
+      const drafts = await emailDraftRepository.findPending(userId);
       res.json({ drafts, count: drafts.length });
     } catch (error) {
       res.status(500).json({ error: 'Failed to fetch drafts' });
+    }
+  }
+
+  async dismissDraft(req: Request, res: Response): Promise<void> {
+    try {
+      const { draft_id } = req.params;
+      const draft = await emailDraftRepository.findById(draft_id);
+      if (!draft) {
+        res.status(404).json({ error: 'Draft not found' });
+        return;
+      }
+      await emailDraftRepository.updateStatus(draft_id, 'rejected');
+      res.json({ message: 'Draft dismissed' });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to dismiss draft' });
     }
   }
 

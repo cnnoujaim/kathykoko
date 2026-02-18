@@ -45,14 +45,20 @@ export class EmailDraftRepository {
     return result.rows;
   }
 
-  async findPending(): Promise<EmailDraft[]> {
+  async findPending(userId?: string): Promise<EmailDraft[]> {
+    const userFilter = userId
+      ? ' AND e.account_id IN (SELECT id FROM user_accounts WHERE user_id = $1)'
+      : '';
+    const params = userId ? [userId] : [];
+
     const result = await pool.query(
       `SELECT ed.*, e.from_address, e.subject as original_subject, e.snippet
        FROM email_drafts ed
        JOIN emails e ON ed.email_id = e.id
-       WHERE ed.status = 'draft'
+       WHERE ed.status = 'draft'${userFilter}
        ORDER BY ed.created_at DESC
-       LIMIT 20`
+       LIMIT 20`,
+      params
     );
     return result.rows;
   }
