@@ -147,6 +147,43 @@ class DashboardController {
     }
   }
 
+  async updateTask(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+      const { id } = req.params;
+      const { priority, due_date, category } = req.body;
+
+      // Verify task belongs to user
+      const task = await taskRepository.findById(id, userId);
+      if (!task) {
+        res.status(404).json({ error: 'Task not found' });
+        return;
+      }
+
+      if (priority !== undefined) {
+        if (!['urgent', 'high', 'medium', 'low'].includes(priority)) {
+          res.status(400).json({ error: 'Invalid priority' });
+          return;
+        }
+        await taskRepository.updatePriority(id, priority);
+      }
+
+      if (due_date !== undefined) {
+        await taskRepository.updateDueDate(id, due_date ? new Date(due_date) : null);
+      }
+
+      if (category !== undefined) {
+        await taskRepository.updateCategory(id, category);
+      }
+
+      const updated = await taskRepository.findById(id, userId);
+      res.json({ task: updated });
+    } catch (error) {
+      console.error('Update task error:', error);
+      res.status(500).json({ error: 'Failed to update task' });
+    }
+  }
+
   async deleteTask(req: Request, res: Response): Promise<void> {
     try {
       const userId = req.user!.userId;

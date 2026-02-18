@@ -198,6 +198,171 @@
   // ---- Tasks ----
   const taskList = document.getElementById('task-list');
   let currentFilter = 'all';
+  let tasksData = []; // store for edit panel reference
+
+  function buildTaskCard(task) {
+    const card = document.createElement('div');
+    const statusClass = task.status === 'completed' ? ' completed' : task.status === 'deferred' ? ' deferred' : '';
+    card.className = 'task-card' + statusClass;
+    card.dataset.taskId = task.id;
+
+    const dueStr = task.due_date
+      ? new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      : '';
+
+    const priorityBadge = task.priority
+      ? '<span class="task-badge ' + task.priority + '">' + task.priority + '</span>'
+      : '';
+
+    const deferredBadge = task.status === 'deferred'
+      ? '<span class="task-badge deferred">deferred</span>'
+      : '';
+
+    const description = task.description
+      ? '<div class="task-description">' + escapeHtml(task.description) + '</div>'
+      : '';
+
+    card.innerHTML =
+      '<div class="task-main">' +
+        '<div class="task-check" data-id="' + task.id + '" data-status="' + task.status + '"></div>' +
+        '<div class="task-info" data-id="' + task.id + '">' +
+          '<div class="task-title">' + escapeHtml(task.parsed_title || task.raw_text) + '</div>' +
+          description +
+          '<div class="task-meta">' +
+            (task.category ? '<span class="task-badge ' + task.category + '">' + task.category + '</span>' : '') +
+            priorityBadge +
+            deferredBadge +
+            (dueStr ? '<span class="task-due">' + dueStr + '</span>' : '') +
+            (task.estimated_hours ? '<span class="task-due">' + task.estimated_hours + 'h</span>' : '') +
+          '</div>' +
+        '</div>' +
+        '<button class="task-delete" data-id="' + task.id + '" title="Delete">&times;</button>' +
+      '</div>';
+
+    return card;
+  }
+
+  function buildEditPanel(task) {
+    var panel = document.createElement('div');
+    panel.className = 'task-edit-panel';
+
+    // Priority pills
+    var priorities = ['urgent', 'high', 'medium', 'low'];
+    var priorityHtml = '<div class="edit-row"><span class="edit-label">Priority</span><div class="edit-pills">';
+    priorities.forEach(function (p) {
+      var active = task.priority === p ? ' active' : '';
+      priorityHtml += '<button class="edit-pill priority-pill ' + p + active + '" data-value="' + p + '">' + p + '</button>';
+    });
+    priorityHtml += '</div></div>';
+
+    // Category pills
+    var categoryHtml = '<div class="edit-row"><span class="edit-label">Category</span><div class="edit-pills">';
+    userCategories.forEach(function (cat) {
+      var active = task.category === cat.name ? ' active' : '';
+      var dot = cat.color ? '<span class="cat-dot" style="background:' + cat.color + '"></span>' : '';
+      categoryHtml += '<button class="edit-pill category-pill' + active + '" data-value="' + cat.name + '">' + dot + cat.name + '</button>';
+    });
+    categoryHtml += '</div></div>';
+
+    // Due date
+    var dateVal = task.due_date ? new Date(task.due_date).toISOString().split('T')[0] : '';
+    var dateHtml = '<div class="edit-row"><span class="edit-label">Due</span>' +
+      '<input type="date" class="edit-date" value="' + dateVal + '">' +
+      (dateVal ? '<button class="edit-clear-date" title="Clear date">&times;</button>' : '') +
+      '</div>';
+
+    panel.innerHTML = priorityHtml + categoryHtml + dateHtml;
+
+    // Bind priority pills
+    panel.querySelectorAll('.priority-pill').forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        panel.querySelectorAll('.priority-pill').forEach(function (b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        await patchTask(task.id, { priority: btn.dataset.value });
+        task.priority = btn.dataset.value;
+        refreshTaskCard(task);
+      });
+    });
+
+    // Bind category pills
+    panel.querySelectorAll('.category-pill').forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        panel.querySelectorAll('.category-pill').forEach(function (b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        await patchTask(task.id, { category: btn.dataset.value });
+        task.category = btn.dataset.value;
+        refreshTaskCard(task);
+      });
+    });
+
+    // Bind date input
+    var dateInput = panel.querySelector('.edit-date');
+    dateInput.addEventListener('change', async function () {
+      var val = dateInput.value || null;
+      await patchTask(task.id, { due_date: val });
+      task.due_date = val;
+      refreshTaskCard(task);
+    });
+
+    // Bind clear date
+    var clearBtn = panel.querySelector('.edit-clear-date');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', async function () {
+        dateInput.value = '';
+        await patchTask(task.id, { due_date: null });
+        task.due_date = null;
+        refreshTaskCard(task);
+      });
+    }
+
+    return panel;
+  }
+
+  function refreshTaskCard(task) {
+    var card = taskList.querySelector('.task-card[data-task-id="' + task.id + '"]');
+    if (!card) return;
+    var newCard = buildTaskCard(task);
+    // Preserve edit panel if open
+    var existingPanel = card.querySelector('.task-edit-panel');
+    if (existingPanel) {
+      newCard.appendChild(buildEditPanel(task));
+      newCard.classList.add('editing');
+    }
+    card.replaceWith(newCard);
+    bindTaskCardHandlers(newCard, task);
+  }
+
+  function bindTaskCardHandlers(card, task) {
+    card.querySelector('.task-check').addEventListener('click', function () {
+      toggleTask(task.id, task.status);
+    });
+    card.querySelector('.task-delete').addEventListener('click', function () {
+      deleteTask(task.id);
+    });
+    card.querySelector('.task-info').addEventListener('click', function () {
+      var existing = card.querySelector('.task-edit-panel');
+      if (existing) {
+        existing.remove();
+        card.classList.remove('editing');
+      } else {
+        // Close any other open edit panels
+        taskList.querySelectorAll('.task-edit-panel').forEach(function (p) {
+          p.parentElement.classList.remove('editing');
+          p.remove();
+        });
+        card.appendChild(buildEditPanel(task));
+        card.classList.add('editing');
+      }
+    });
+  }
+
+  async function patchTask(id, data) {
+    await fetch(API + '/api/tasks/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+  }
 
   async function loadTasks() {
     taskList.innerHTML = '<div class="loading">Loading tasks...</div>';
@@ -227,52 +392,12 @@
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
 
+      tasksData = sorted;
+
       sorted.forEach(task => {
-        const card = document.createElement('div');
-        const statusClass = task.status === 'completed' ? ' completed' : task.status === 'deferred' ? ' deferred' : '';
-        card.className = 'task-card' + statusClass;
-
-        const dueStr = task.due_date
-          ? new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-          : '';
-
-        const priorityBadge = (task.priority === 'urgent' || task.priority === 'high')
-          ? '<span class="task-badge ' + task.priority + '">' + task.priority + '</span>'
-          : '';
-
-        const deferredBadge = task.status === 'deferred'
-          ? '<span class="task-badge deferred">deferred</span>'
-          : '';
-
-        const description = task.description
-          ? '<div class="task-description">' + escapeHtml(task.description) + '</div>'
-          : '';
-
-        card.innerHTML =
-          '<div class="task-check" data-id="' + task.id + '" data-status="' + task.status + '"></div>' +
-          '<div class="task-info">' +
-            '<div class="task-title">' + escapeHtml(task.parsed_title || task.raw_text) + '</div>' +
-            description +
-            '<div class="task-meta">' +
-              '<span class="task-badge ' + task.category + '">' + task.category + '</span>' +
-              priorityBadge +
-              deferredBadge +
-              (dueStr ? '<span class="task-due">' + dueStr + '</span>' : '') +
-              (task.estimated_hours ? '<span class="task-due">' + task.estimated_hours + 'h</span>' : '') +
-            '</div>' +
-          '</div>' +
-          '<button class="task-delete" data-id="' + task.id + '" title="Delete">&times;</button>';
-
+        const card = buildTaskCard(task);
         taskList.appendChild(card);
-      });
-
-      // Bind handlers
-      taskList.querySelectorAll('.task-check').forEach(el => {
-        el.addEventListener('click', () => toggleTask(el.dataset.id, el.dataset.status));
-      });
-
-      taskList.querySelectorAll('.task-delete').forEach(el => {
-        el.addEventListener('click', () => deleteTask(el.dataset.id));
+        bindTaskCardHandlers(card, task);
       });
     } catch {
       taskList.innerHTML = '<div class="empty-state">Failed to load tasks</div>';
@@ -401,8 +526,9 @@
   }
 
   // ---- Goals ----
-  async function loadGoals() {
+  async function loadGoals(preserveScroll) {
     const content = document.getElementById('goals-content');
+    var scrollTop = preserveScroll ? content.scrollTop : 0;
     content.innerHTML = '<div class="loading">Loading goals...</div>';
 
     try {
@@ -494,11 +620,14 @@
         content.appendChild(section);
       });
 
+      // Restore scroll position
+      if (preserveScroll) content.scrollTop = scrollTop;
+
       // Bind milestone toggle handlers
       content.querySelectorAll('.milestone-check').forEach(function (el) {
         el.addEventListener('click', async function () {
           await fetch(API + '/api/goals/milestones/' + el.dataset.id + '/toggle', { method: 'PATCH' });
-          loadGoals();
+          loadGoals(true);
         });
       });
 
@@ -511,7 +640,7 @@
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ title: input.value.trim() }),
             });
-            loadGoals();
+            loadGoals(true);
           }
         });
       });
@@ -520,7 +649,7 @@
       content.querySelectorAll('.goal-delete-btn').forEach(function (btn) {
         btn.addEventListener('click', async function () {
           await fetch(API + '/api/goals/' + btn.dataset.id, { method: 'DELETE' });
-          loadGoals();
+          loadGoals(true);
         });
       });
     } catch (err) {
