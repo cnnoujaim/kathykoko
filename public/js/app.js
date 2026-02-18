@@ -428,70 +428,205 @@
     } catch { /* ignore */ }
   }
 
-  // ---- Calendar ----
-  const calendarList = document.getElementById('calendar-list');
+  // ---- Calendar (Week Grid) ----
+  var calendarList = document.getElementById('calendar-list');
+  var calendarWeekOffset = 0;
+  var CAL_START_HOUR = 7;
+  var CAL_END_HOUR = 21;
+  var CAL_HOUR_HEIGHT = 48;
+
+  var eventTypeColors = {
+    work: '#b8c0ff',
+    studio: '#e7c6ff',
+    workout: '#bbd0ff',
+    personal: '#c8b6ff',
+    blocked: '#d4cade'
+  };
+
+  function getMonday(d) {
+    var day = d.getDay();
+    var diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    var mon = new Date(d);
+    mon.setDate(diff);
+    mon.setHours(0, 0, 0, 0);
+    return mon;
+  }
+
+  function getWeekStart() {
+    var now = new Date();
+    var mon = getMonday(now);
+    mon.setDate(mon.getDate() + calendarWeekOffset * 7);
+    return mon;
+  }
+
+  function updateWeekLabel() {
+    var weekStart = getWeekStart();
+    var weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    var opts = { month: 'short', day: 'numeric' };
+    var label = weekStart.toLocaleDateString('en-US', opts) + ' – ' + weekEnd.toLocaleDateString('en-US', opts);
+    var yr = weekStart.getFullYear();
+    if (yr !== new Date().getFullYear()) label += ', ' + yr;
+    var el = document.getElementById('cal-week-label');
+    if (el) el.textContent = label;
+  }
+
+  document.getElementById('cal-prev').addEventListener('click', function () {
+    calendarWeekOffset--;
+    updateWeekLabel();
+    loadCalendar();
+  });
+  document.getElementById('cal-next').addEventListener('click', function () {
+    calendarWeekOffset++;
+    updateWeekLabel();
+    loadCalendar();
+  });
+  document.getElementById('cal-today').addEventListener('click', function () {
+    calendarWeekOffset = 0;
+    updateWeekLabel();
+    loadCalendar();
+  });
 
   async function loadCalendar() {
+    updateWeekLabel();
     calendarList.innerHTML = '<div class="loading">Loading calendar...</div>';
 
-    try {
-      const res = await fetch(API + '/api/calendar?days=7');
-      const data = await res.json();
+    var weekStart = getWeekStart();
+    var startISO = weekStart.toISOString();
 
-      if (!data.events || data.events.length === 0) {
-        calendarList.innerHTML = '<div class="empty-state"><div class="icon">&#128197;</div>No upcoming events</div>';
-        return;
+    try {
+      var res = await fetch(API + '/api/calendar?days=7&start=' + encodeURIComponent(startISO));
+      var data = await res.json();
+      var events = data.events || [];
+
+      // Build conflict map
+      var conflictIds = {};
+      for (var i = 0; i < events.length; i++) {
+        for (var j = i + 1; j < events.length; j++) {
+          var aS = new Date(events[i].start_time).getTime();
+          var aE = new Date(events[i].end_time).getTime();
+          var bS = new Date(events[j].start_time).getTime();
+          var bE = new Date(events[j].end_time).getTime();
+          if (aS < bE && aE > bS) {
+            conflictIds[events[i].id] = true;
+            conflictIds[events[j].id] = true;
+          }
+        }
       }
 
-      const grouped = {};
-      data.events.forEach(event => {
-        const date = new Date(event.start_time).toLocaleDateString('en-US', {
-          weekday: 'long',
-          month: 'short',
-          day: 'numeric',
-        });
-        if (!grouped[date]) grouped[date] = [];
-        grouped[date].push(event);
+      // Group events by day-of-week index (0=Mon ... 6=Sun)
+      var dayBuckets = [[], [], [], [], [], [], []];
+      events.forEach(function (ev) {
+        var evDate = new Date(ev.start_time);
+        var dayIdx = (evDate.getDay() + 6) % 7; // Mon=0
+        dayBuckets[dayIdx].push(ev);
       });
 
-      calendarList.innerHTML = '';
+      // Build grid HTML
+      var totalHeight = (CAL_END_HOUR - CAL_START_HOUR) * CAL_HOUR_HEIGHT;
+      var dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      var today = new Date();
+      today.setHours(0, 0, 0, 0);
 
-      Object.entries(grouped).forEach(([date, events]) => {
-        const dayEl = document.createElement('div');
-        dayEl.className = 'calendar-day';
+      var html = '<div class="cal-grid">';
 
-        // Detect conflicts: mark events that overlap with another event
-        var conflictIds = {};
-        for (var i = 0; i < events.length; i++) {
-          for (var j = i + 1; j < events.length; j++) {
-            var aStart = new Date(events[i].start_time).getTime();
-            var aEnd = new Date(events[i].end_time).getTime();
-            var bStart = new Date(events[j].start_time).getTime();
-            var bEnd = new Date(events[j].end_time).getTime();
-            if (aStart < bEnd && aEnd > bStart) {
-              conflictIds[events[i].id] = true;
-              conflictIds[events[j].id] = true;
-            }
+      // Header row
+      html += '<div class="cal-header-row">';
+      html += '<div class="cal-time-gutter cal-header-cell"></div>';
+      for (var d = 0; d < 7; d++) {
+        var colDate = new Date(weekStart);
+        colDate.setDate(colDate.getDate() + d);
+        var isToday = colDate.getTime() === today.getTime();
+        html += '<div class="cal-header-cell' + (isToday ? ' cal-today' : '') + '">';
+        html += '<span class="cal-day-name">' + dayNames[d] + '</span>';
+        html += '<span class="cal-day-num' + (isToday ? ' cal-today-num' : '') + '">' + colDate.getDate() + '</span>';
+        html += '</div>';
+      }
+      html += '</div>';
+
+      // Body: time gutter + day columns
+      html += '<div class="cal-body" style="height:' + totalHeight + 'px">';
+
+      // Time gutter
+      html += '<div class="cal-time-gutter">';
+      for (var h = CAL_START_HOUR; h < CAL_END_HOUR; h++) {
+        var top = (h - CAL_START_HOUR) * CAL_HOUR_HEIGHT;
+        var label = h === 0 ? '12 AM' : h < 12 ? h + ' AM' : h === 12 ? '12 PM' : (h - 12) + ' PM';
+        html += '<div class="cal-time-label" style="top:' + top + 'px">' + label + '</div>';
+      }
+      html += '</div>';
+
+      // Day columns
+      for (var d = 0; d < 7; d++) {
+        var colDate = new Date(weekStart);
+        colDate.setDate(colDate.getDate() + d);
+        var isToday = colDate.getTime() === today.getTime();
+
+        html += '<div class="cal-day-col' + (isToday ? ' cal-today-col' : '') + '">';
+
+        // Hour grid lines
+        for (var h = CAL_START_HOUR; h < CAL_END_HOUR; h++) {
+          var top = (h - CAL_START_HOUR) * CAL_HOUR_HEIGHT;
+          html += '<div class="cal-hour-line" style="top:' + top + 'px"></div>';
+        }
+
+        // Now indicator
+        if (isToday && calendarWeekOffset === 0) {
+          var nowH = new Date().getHours() + new Date().getMinutes() / 60;
+          if (nowH >= CAL_START_HOUR && nowH <= CAL_END_HOUR) {
+            var nowTop = (nowH - CAL_START_HOUR) * CAL_HOUR_HEIGHT;
+            html += '<div class="cal-now-line" style="top:' + nowTop + 'px"></div>';
           }
         }
 
-        let html = '<div class="calendar-day-header">' + date + '</div>';
-        events.forEach(event => {
-          const time = new Date(event.start_time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-          const type = event.event_type || 'personal';
-          const conflictClass = conflictIds[event.id] ? ' conflict' : '';
-          html +=
-            '<div class="calendar-event' + conflictClass + '">' +
-              '<div class="event-type-dot ' + type + '"></div>' +
-              '<span class="event-time">' + time + '</span>' +
-              '<span class="event-title">' + escapeHtml(event.title || 'Untitled') + '</span>' +
-              (conflictIds[event.id] ? '<span class="conflict-badge">conflict</span>' : '') +
-            '</div>';
+        // Events
+        var dayEvents = dayBuckets[d];
+        dayEvents.forEach(function (ev) {
+          var s = new Date(ev.start_time);
+          var e = new Date(ev.end_time);
+          var startH = s.getHours() + s.getMinutes() / 60;
+          var endH = e.getHours() + e.getMinutes() / 60;
+
+          // Clamp to visible range
+          if (endH <= CAL_START_HOUR || startH >= CAL_END_HOUR) return;
+          startH = Math.max(startH, CAL_START_HOUR);
+          endH = Math.min(endH, CAL_END_HOUR);
+
+          var evTop = (startH - CAL_START_HOUR) * CAL_HOUR_HEIGHT;
+          var evHeight = Math.max((endH - startH) * CAL_HOUR_HEIGHT, 18);
+          var color = eventTypeColors[ev.event_type] || eventTypeColors.personal;
+          var isConflict = conflictIds[ev.id];
+
+          var timeStr = s.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+          var title = escapeHtml(ev.title || 'Untitled');
+
+          html += '<div class="cal-event' + (isConflict ? ' cal-conflict' : '') + '" ' +
+            'style="top:' + evTop + 'px;height:' + evHeight + 'px;background:' + color + '" ' +
+            'title="' + timeStr + ' ' + title + '">';
+          if (evHeight >= 34) {
+            html += '<div class="cal-event-time">' + timeStr + '</div>';
+          }
+          html += '<div class="cal-event-title">' + title + '</div>';
+          if (isConflict) {
+            html += '<div class="cal-conflict-dot"></div>';
+          }
+          html += '</div>';
         });
 
-        dayEl.innerHTML = html;
-        calendarList.appendChild(dayEl);
+        html += '</div>';
+      }
+
+      html += '</div>'; // .cal-body
+
+      // Legend
+      html += '<div class="cal-legend">';
+      var types = [['work', 'Work'], ['studio', 'Studio'], ['workout', 'Workout'], ['personal', 'Personal'], ['blocked', 'Blocked']];
+      types.forEach(function (t) {
+        html += '<span class="cal-legend-item"><span class="cal-legend-dot" style="background:' + eventTypeColors[t[0]] + '"></span>' + t[1] + '</span>';
       });
+      html += '</div>';
+
+      calendarList.innerHTML = html;
     } catch {
       calendarList.innerHTML = '<div class="empty-state">Failed to load calendar</div>';
     }

@@ -216,8 +216,8 @@ class DashboardController {
     try {
       const userId = req.user!.userId;
       const days = parseInt(req.query.days as string) || 7;
-      const now = new Date();
-      const end = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+      const start = req.query.start ? new Date(req.query.start as string) : new Date();
+      const end = new Date(start.getTime() + days * 24 * 60 * 60 * 1000);
 
       const accounts = await pool.query(
         `SELECT ua.id, ua.account_type FROM user_accounts ua
@@ -229,7 +229,7 @@ class DashboardController {
       let events: any[] = [];
       for (const account of accounts.rows) {
         try {
-          const accountEvents = await calendarEventRepository.findInRange(account.id, now, end);
+          const accountEvents = await calendarEventRepository.findInRange(account.id, start, end);
           events.push(...accountEvents.map(e => ({ ...e, account_type: account.account_type })));
         } catch { /* skip */ }
       }

@@ -88,7 +88,12 @@
         <!-- Calendar View -->
         <div id="view-calendar" class="panel-view">
           <div class="panel-header">
-            <h2>Calendar</h2>
+            <div class="calendar-nav">
+              <button id="cal-prev" class="cal-nav-btn" title="Previous week">&#8249;</button>
+              <button id="cal-today" class="cal-nav-today">Today</button>
+              <button id="cal-next" class="cal-nav-btn" title="Next week">&#8250;</button>
+            </div>
+            <span id="cal-week-label" class="cal-week-label"></span>
           </div>
           <div id="calendar-list" class="panel-body"></div>
         </div>
