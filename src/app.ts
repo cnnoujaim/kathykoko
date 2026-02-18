@@ -1,6 +1,7 @@
 import express, { Express } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import path from 'path';
 import { requestLogger } from './middleware/logger';
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
@@ -21,11 +22,12 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       connectSrc: ["'self'"],
-      imgSrc: ["'self'", "data:"],
+      imgSrc: ["'self'", "data:", "https://*.googleusercontent.com"],
     },
   },
 }));
 app.use(cors());
+app.use(cookieParser());
 
 // Static file serving (dashboard)
 app.use(express.static(path.join(__dirname, '..', 'public')));

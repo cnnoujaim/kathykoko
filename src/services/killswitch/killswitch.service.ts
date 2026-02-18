@@ -19,12 +19,15 @@ export class KillswitchService {
   /**
    * Calculate Lyra work hours from synced calendar events for the current week
    */
-  async calculateWeeklyHours(): Promise<{ totalHours: number; events: any[] }> {
+  async calculateWeeklyHours(userId?: string): Promise<{ totalHours: number; events: any[] }> {
     const weekStart = lyraWorkHoursRepository.getWeekStart();
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekEnd.getDate() + 7);
 
-    // Get all "work" type events from calendar for this week across ALL accounts
+    const userFilter = userId ? ' AND ua.user_id = $3' : '';
+    const params: any[] = [weekStart, weekEnd];
+    if (userId) params.push(userId);
+
     const result = await pool.query(
       `SELECT ce.title, ce.start_time, ce.end_time, ce.event_type, ua.account_type, ua.email
        FROM calendar_events ce
@@ -36,9 +39,9 @@ export class KillswitchService {
          OR ce.title ILIKE '%lyra%'
          OR ce.title ILIKE '%work%'
          OR ua.account_type = 'lyra'
-       )
+       )${userFilter}
        ORDER BY ce.start_time ASC`,
-      [weekStart, weekEnd]
+      params
     );
 
     let totalHours = 0;
@@ -76,8 +79,8 @@ export class KillswitchService {
   /**
    * Get current killswitch status
    */
-  async getStatus(): Promise<KillswitchStatus> {
-    const { totalHours } = await this.calculateWeeklyHours();
+  async getStatus(userId?: string): Promise<KillswitchStatus> {
+    const { totalHours } = await this.calculateWeeklyHours(userId);
     const weekStart = lyraWorkHoursRepository.getWeekStart();
     const dateStr = weekStart.toISOString().split('T')[0];
 
@@ -129,8 +132,8 @@ export class KillswitchService {
    * Check if a new Lyra task should be blocked
    * Returns { blocked: boolean, message: string }
    */
-  async shouldBlockLyraTask(): Promise<{ blocked: boolean; message: string }> {
-    const status = await this.getStatus();
+  async shouldBlockLyraTask(userId?: string): Promise<{ blocked: boolean; message: string }> {
+    const status = await this.getStatus(userId);
 
     if (status.isActive || status.currentHours >= KILLSWITCH_THRESHOLD) {
       return {

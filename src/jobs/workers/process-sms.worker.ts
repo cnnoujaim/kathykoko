@@ -8,6 +8,7 @@ interface ProcessSMSJobData {
   messageSid: string;
   from: string;
   body: string;
+  userId?: string;
 }
 
 /**
@@ -16,7 +17,7 @@ interface ProcessSMSJobData {
  * then sends the response via SMS.
  */
 async function processSMSWorker(job: Job<ProcessSMSJobData>) {
-  const { messageSid, from, body } = job.data;
+  const { messageSid, from, body, userId } = job.data;
 
   console.log(`🔄 Processing SMS job ${job.id} for message ${messageSid}`);
 
@@ -25,7 +26,7 @@ async function processSMSWorker(job: Job<ProcessSMSJobData>) {
     await messageRepository.updateStatus(messageSid, 'processing');
 
     // 2. Process message through the full pipeline
-    const { response, messageType } = await chatProcessingService.processMessage(body, messageSid);
+    const { response, messageType } = await chatProcessingService.processMessage(body, messageSid, userId);
     console.log(`📋 Message classified as: ${messageType}`);
 
     // 3. Send response via SMS

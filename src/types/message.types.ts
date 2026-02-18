@@ -8,6 +8,7 @@ export interface Message {
   status: 'received' | 'processing' | 'processed' | 'failed';
   processed_at: Date | null;
   task_id: string | null;
+  user_id: string | null;
   created_at: Date;
 }
 
@@ -19,4 +20,5 @@ export interface CreateMessageInput {
   body?: string;
   status?: 'received' | 'processing' | 'processed' | 'failed';
   task_id?: string;
+  user_id?: string;
 }

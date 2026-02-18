@@ -102,33 +102,42 @@ Return JSON: {"type": "query"} or {"type": "task"} or {"type": "action"}`,
 }
 
 /**
- * Get the appropriate account ID for a task category.
+ * Get the appropriate account ID for a task category, scoped to a user.
  */
-async function getAccountIdForCategory(category: string): Promise<string | undefined> {
+async function getAccountIdForCategory(category: string, userId?: string): Promise<string | undefined> {
   const accountTypeMap: Record<string, string> = {
     lyra: 'lyra',
     music: 'music',
     personal: 'personal',
     house: 'personal',
+    work: 'lyra',
+    home: 'personal',
   };
 
   const accountType = accountTypeMap[category] || 'personal';
 
+  const userFilter = userId ? ' AND ua.user_id = $2' : '';
+  const params = userId ? [accountType, userId] : [accountType];
+
   const result = await pool.query(
     `SELECT ua.id FROM user_accounts ua
      JOIN oauth_tokens ot ON ua.id = ot.account_id
-     WHERE ua.account_type = $1 AND ot.provider = 'google'
+     WHERE ua.account_type = $1 AND ot.provider = 'google'${userFilter}
      LIMIT 1`,
-    [accountType]
+    params
   );
 
   if (result.rows.length > 0) return result.rows[0].id;
 
+  const primaryFilter = userId ? ' AND ua.user_id = $1' : '';
+  const primaryParams = userId ? [userId] : [];
+
   const primary = await pool.query(
     `SELECT ua.id FROM user_accounts ua
      JOIN oauth_tokens ot ON ua.id = ot.account_id
-     WHERE ua.is_primary = true AND ot.provider = 'google'
-     LIMIT 1`
+     WHERE ua.is_primary = true AND ot.provider = 'google'${primaryFilter}
+     LIMIT 1`,
+    primaryParams
   );
 
   return primary.rows[0]?.id;
@@ -139,7 +148,7 @@ async function getAccountIdForCategory(category: string): Promise<string | undef
  * Returns the response string and message type — does NOT send SMS.
  * This is used by both the SMS worker and the web chat endpoint.
  */
-export async function processMessage(body: string, messageSid?: string): Promise<ChatResponse> {
+export async function processMessage(body: string, messageSid?: string, userId?: string): Promise<ChatResponse> {
   // Check if this is a response to a pending evening check-in
   const pendingCheckin = await healthCheckinRepository.findPendingResponse();
   if (pendingCheckin) {
@@ -184,8 +193,8 @@ export async function processMessage(body: string, messageSid?: string): Promise
     const sid = messageSid ? `${messageSid}${parsedTasks.length > 1 ? `-${i}` : ''}` : 'web';
 
     // Check killswitch for Lyra tasks — defer instead of reject
-    if (parsedTask.category === 'lyra') {
-      const killcheck = await killswitchService.shouldBlockLyraTask();
+    if (parsedTask.category === 'lyra' || parsedTask.category === 'work') {
+      const killcheck = await killswitchService.shouldBlockLyraTask(userId);
       if (killcheck.blocked) {
         await taskRepository.create({
           raw_text: body,
@@ -198,6 +207,7 @@ export async function processMessage(body: string, messageSid?: string): Promise
           pushback_reason: 'Deferred — 40-hour killswitch active. Will resurface next week.',
           due_date: parsedTask.due_date ? new Date(parsedTask.due_date) : undefined,
           estimated_hours: parsedTask.estimated_hours || undefined,
+          user_id: userId,
           created_from_message_sid: sid,
         });
 
@@ -227,6 +237,7 @@ export async function processMessage(body: string, messageSid?: string): Promise
         alignment_score: validation.alignmentScore,
         due_date: parsedTask.due_date ? new Date(parsedTask.due_date) : undefined,
         estimated_hours: parsedTask.estimated_hours || undefined,
+        user_id: userId,
         created_from_message_sid: sid,
       });
 
@@ -248,6 +259,7 @@ export async function processMessage(body: string, messageSid?: string): Promise
         pushback_reason: validation.reasoning,
         due_date: parsedTask.due_date ? new Date(parsedTask.due_date) : undefined,
         estimated_hours: parsedTask.estimated_hours || undefined,
+        user_id: userId,
         created_from_message_sid: sid,
       });
 
@@ -257,7 +269,7 @@ export async function processMessage(body: string, messageSid?: string): Promise
 
     // Task is valid — create it
     let conflictWarning = '';
-    const accountId = await getAccountIdForCategory(parsedTask.category);
+    const accountId = await getAccountIdForCategory(parsedTask.category, userId);
 
     if (parsedTask.due_date && parsedTask.estimated_hours && accountId) {
       const dueDate = new Date(parsedTask.due_date);
@@ -287,6 +299,7 @@ export async function processMessage(body: string, messageSid?: string): Promise
       estimated_hours: parsedTask.estimated_hours || undefined,
       created_from_message_sid: sid,
       account_id: accountId,
+      user_id: userId,
     });
 
     console.log(`✓ Task created: ${task.id} - ${task.parsed_title}`);
@@ -322,8 +335,8 @@ export async function processMessage(body: string, messageSid?: string): Promise
 
     confirmations.push(line);
 
-    if (parsedTask.category === 'lyra') {
-      const killcheck = await killswitchService.shouldBlockLyraTask();
+    if (parsedTask.category === 'lyra' || parsedTask.category === 'work') {
+      const killcheck = await killswitchService.shouldBlockLyraTask(userId);
       if (killcheck.message && !warnings.includes(killcheck.message)) {
         warnings.push(killcheck.message);
       }

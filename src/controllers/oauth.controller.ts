@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { oauthService } from '../services/oauth/oauth.service';
 import { OAuthCallbackParams } from '../types/oauth.types';
+import { authController } from './auth.controller';
 
 /**
  * OAuth controller for Google authentication flow
@@ -60,6 +61,11 @@ export class OAuthController {
       if (!code || !state) {
         res.status(400).send('<h1>Missing authorization code or state</h1>');
         return;
+      }
+
+      // Delegate login/connect flows to the auth controller
+      if (state === 'login' || state.startsWith('connect:')) {
+        return authController.callback(req, res);
       }
 
       let accountId: string;

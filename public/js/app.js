@@ -1,9 +1,74 @@
 // Kathy Koko Dashboard
 (function () {
   const API = '';
+  let userCategories = [];
+
+  // ---- Auth Check ----
+  async function checkAuth() {
+    try {
+      const res = await fetch(API + '/auth/me');
+      if (res.status === 401) {
+        window.location.href = '/login.html';
+        return null;
+      }
+      const data = await res.json();
+
+      // Show user info in sidebar
+      if (data.user) {
+        const userEl = document.getElementById('sidebar-user');
+        const avatarEl = document.getElementById('user-avatar');
+        const nameEl = document.getElementById('user-name');
+        if (data.user.avatar_url) {
+          avatarEl.src = data.user.avatar_url;
+          avatarEl.style.display = 'block';
+        }
+        nameEl.textContent = data.user.name || data.user.email;
+        userEl.style.display = 'flex';
+        document.getElementById('logout-btn').style.display = 'block';
+      }
+
+      // Store categories and build filter pills
+      if (data.categories) {
+        userCategories = data.categories;
+        buildFilterPills(data.categories);
+      }
+
+      return data;
+    } catch {
+      window.location.href = '/login.html';
+      return null;
+    }
+  }
+
+  function buildFilterPills(categories) {
+    const container = document.getElementById('task-filters');
+    container.innerHTML = '<button class="filter-pill active" data-filter="all">All</button>';
+    categories.forEach(cat => {
+      const pill = document.createElement('button');
+      pill.className = 'filter-pill';
+      pill.dataset.filter = cat.name;
+      pill.textContent = cat.name.charAt(0).toUpperCase() + cat.name.slice(1);
+      if (cat.color) pill.style.borderColor = cat.color;
+      container.appendChild(pill);
+    });
+    // Re-bind click handlers
+    container.querySelectorAll('.filter-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        container.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        currentFilter = pill.dataset.filter;
+        loadTasks();
+      });
+    });
+  }
+
+  // ---- Logout ----
+  document.getElementById('logout-btn').addEventListener('click', async () => {
+    await fetch(API + '/auth/logout', { method: 'POST' });
+    window.location.href = '/login.html';
+  });
 
   // ---- Navigation ----
-  // Chat is always visible. Nav buttons switch the right panel view.
   const navBtns = document.querySelectorAll('.nav-btn');
   const panelViews = document.querySelectorAll('.panel-view');
 
@@ -13,21 +78,19 @@
       navBtns.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
 
-      // Chat nav just focuses the chat input (it's always visible)
       if (tab === 'chat') {
         document.getElementById('chat-input').focus();
         return;
       }
 
-      // Switch right panel view
       panelViews.forEach(v => v.classList.remove('active'));
       const target = document.getElementById('view-' + tab);
       if (target) target.classList.add('active');
 
-      // Load data
       if (tab === 'tasks') loadTasks();
       if (tab === 'calendar') loadCalendar();
       if (tab === 'status') loadKillswitch();
+      if (tab === 'settings') loadSettings();
     });
   });
 
@@ -130,15 +193,6 @@
   // ---- Tasks ----
   const taskList = document.getElementById('task-list');
   let currentFilter = 'all';
-
-  document.querySelectorAll('.filter-pill').forEach(pill => {
-    pill.addEventListener('click', () => {
-      document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
-      pill.classList.add('active');
-      currentFilter = pill.dataset.filter;
-      loadTasks();
-    });
-  });
 
   async function loadTasks() {
     taskList.innerHTML = '<div class="loading">Loading tasks...</div>';
@@ -341,6 +395,82 @@
     }
   }
 
+  // ---- Settings ----
+  async function loadSettings() {
+    try {
+      const res = await fetch(API + '/auth/me');
+      const data = await res.json();
+
+      // Accounts list
+      const accountsList = document.getElementById('accounts-list');
+      if (data.accounts && data.accounts.length > 0) {
+        accountsList.innerHTML = data.accounts.map(a =>
+          '<div class="settings-item">' +
+            '<span>' + escapeHtml(a.email) + '</span>' +
+            '<span class="settings-badge">' + a.account_type + (a.is_primary ? ' (primary)' : '') + '</span>' +
+          '</div>'
+        ).join('');
+      } else {
+        accountsList.innerHTML = '<div class="empty-state">No accounts connected</div>';
+      }
+
+      // Categories list
+      const categoriesList = document.getElementById('categories-list');
+      if (data.categories && data.categories.length > 0) {
+        categoriesList.innerHTML = data.categories.map(c =>
+          '<div class="settings-item">' +
+            '<span>' +
+              (c.color ? '<span class="cat-dot" style="background:' + c.color + '"></span>' : '') +
+              escapeHtml(c.name) +
+              (c.is_default ? ' <em>(default)</em>' : '') +
+            '</span>' +
+            (!c.is_default ? '<button class="delete-cat-btn" data-id="' + c.id + '">&times;</button>' : '') +
+          '</div>'
+        ).join('');
+
+        categoriesList.querySelectorAll('.delete-cat-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            await fetch(API + '/api/categories/' + btn.dataset.id, { method: 'DELETE' });
+            loadSettings();
+            const authData = await (await fetch(API + '/auth/me')).json();
+            if (authData.categories) buildFilterPills(authData.categories);
+          });
+        });
+      }
+
+      // Phone number
+      if (data.user && data.user.phone_number) {
+        document.getElementById('phone-number').value = data.user.phone_number;
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Add category
+  document.getElementById('add-category-btn').addEventListener('click', async () => {
+    const name = document.getElementById('new-category-name').value.trim();
+    const color = document.getElementById('new-category-color').value;
+    if (!name) return;
+
+    await fetch(API + '/api/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, color }),
+    });
+
+    document.getElementById('new-category-name').value = '';
+    loadSettings();
+    const authData = await (await fetch(API + '/auth/me')).json();
+    if (authData.categories) buildFilterPills(authData.categories);
+  });
+
+  // Save phone
+  document.getElementById('save-phone-btn').addEventListener('click', async () => {
+    const phone = document.getElementById('phone-number').value.trim();
+    if (!phone) return;
+    // TODO: add phone update endpoint
+    alert('Phone number saved! (requires backend endpoint)');
+  });
+
   // ---- Utilities ----
   function escapeHtml(text) {
     const div = document.createElement('div');
@@ -349,16 +479,24 @@
   }
 
   // ---- Init ----
-  loadMessages();
-  loadTasks(); // Pre-load tasks in right panel
-  // Load sidebar killswitch
-  fetch(API + '/api/killswitch')
-    .then(r => r.json())
-    .then(data => {
-      const hours = data.currentHours || 0;
-      const remaining = data.remainingHours || 40;
-      const pct = Math.min((hours / 40) * 100, 100);
-      updateSidebarHours(hours, remaining, pct);
-    })
-    .catch(() => {});
+  async function init() {
+    const authData = await checkAuth();
+    if (!authData) return; // redirected to login
+
+    loadMessages();
+    loadTasks();
+
+    // Load sidebar killswitch
+    fetch(API + '/api/killswitch')
+      .then(r => r.json())
+      .then(data => {
+        const hours = data.currentHours || 0;
+        const remaining = data.remainingHours || 40;
+        const pct = Math.min((hours / 40) * 100, 100);
+        updateSidebarHours(hours, remaining, pct);
+      })
+      .catch(() => {});
+  }
+
+  init();
 })();

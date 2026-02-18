@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { messageRepository } from '../repositories/message.repository';
 import { smsService } from '../services/sms/sms.service';
 import { smsQueue } from '../jobs/queue';
+import { userRepository } from '../repositories/user.repository';
 
 export class SMSController {
   /**
@@ -14,7 +15,7 @@ export class SMSController {
 
       console.log(`📱 Incoming SMS from ${From}: ${Body}`);
 
-      // 1. Idempotency check: Has this message already been processed?
+      // 1. Idempotency check
       const isProcessed = await messageRepository.isProcessed(MessageSid);
       if (isProcessed) {
         console.log(`⚠️  Duplicate message detected: ${MessageSid}`);
@@ -23,7 +24,11 @@ export class SMSController {
         return;
       }
 
-      // 2. Store message in database with status 'received'
+      // 2. Look up user by phone number
+      const user = await userRepository.findByPhoneNumber(From);
+      const userId = user?.id;
+
+      // 3. Store message
       await messageRepository.create({
         message_sid: MessageSid,
         direction: 'inbound',
@@ -31,22 +36,31 @@ export class SMSController {
         to_number: To,
         body: Body,
         status: 'received',
+        user_id: userId,
       });
 
-      // 3. Enqueue async processing job
+      if (!userId) {
+        // Unknown phone number — respond with setup instructions
+        const twiml = smsService.generateTwiMLResponse(
+          'Hi! I don\'t recognize this number. Please sign in at the web dashboard first and add your phone number in Settings.'
+        );
+        res.type('text/xml').send(twiml);
+        return;
+      }
+
+      // 4. Enqueue async processing job
       await smsQueue.add('process-sms', {
         messageSid: MessageSid,
         from: From,
         body: Body,
+        userId: userId,
       });
 
-      // 4. Return TwiML response immediately (< 100ms target)
+      // 5. Return TwiML response immediately
       const twiml = smsService.generateTwiMLResponse('Processing your request...');
       res.type('text/xml').send(twiml);
     } catch (error) {
       console.error('Error handling incoming SMS:', error);
-
-      // Even on error, return valid TwiML to prevent Twilio retries
       const twiml = smsService.generateTwiMLResponse('Error processing request.');
       res.type('text/xml').send(twiml);
     }

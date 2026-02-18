@@ -59,6 +59,9 @@ export const config = {
     adAccountId: process.env.META_AD_ACCOUNT_ID || '',
   },
 
+  // JWT Auth
+  jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-me',
+
   // Logging
   logLevel: process.env.LOG_LEVEL || 'info',
   sentryDsn: process.env.SENTRY_DSN || '',

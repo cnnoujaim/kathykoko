@@ -8,12 +8,10 @@ import { chatProcessingService } from '../services/chat/chat-processing.service'
 import { pool } from '../config/database';
 
 class DashboardController {
-  /**
-   * POST /api/chat - Send a message to Kathy, get synchronous response
-   */
   async chat(req: Request, res: Response): Promise<void> {
     try {
       const { message } = req.body;
+      const userId = req.user!.userId;
       if (!message || typeof message !== 'string') {
         res.status(400).json({ error: 'Message is required' });
         return;
@@ -21,7 +19,6 @@ class DashboardController {
 
       const messageSid = `web-${crypto.randomUUID()}`;
 
-      // Store inbound message
       await messageRepository.create({
         message_sid: messageSid,
         direction: 'inbound',
@@ -29,12 +26,11 @@ class DashboardController {
         to_number: 'kathy',
         body: message,
         status: 'received',
+        user_id: userId,
       });
 
-      // Process through the full pipeline (synchronous for web)
-      const { response, messageType } = await chatProcessingService.processMessage(message, messageSid);
+      const { response, messageType } = await chatProcessingService.processMessage(message, messageSid, userId);
 
-      // Store outbound response
       await messageRepository.create({
         message_sid: `web-reply-${crypto.randomUUID()}`,
         direction: 'outbound',
@@ -42,9 +38,9 @@ class DashboardController {
         to_number: 'web-dashboard',
         body: response,
         status: 'processed',
+        user_id: userId,
       });
 
-      // Mark inbound as processed
       await messageRepository.updateStatus(messageSid, 'processed');
 
       res.json({ response, messageType, timestamp: new Date().toISOString() });
@@ -54,43 +50,33 @@ class DashboardController {
     }
   }
 
-  /**
-   * GET /api/dashboard - Aggregated dashboard data
-   */
-  async getDashboard(_req: Request, res: Response): Promise<void> {
+  async getDashboard(req: Request, res: Response): Promise<void> {
     try {
+      const userId = req.user!.userId;
       const now = new Date();
       const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-      // Fetch all data in parallel
       const [pendingTasks, activeTasks, killswitch, recentMessages, accounts] = await Promise.all([
-        taskRepository.listByStatus('pending', 50),
-        taskRepository.listByStatus('active', 50),
-        killswitchService.getStatus().catch(() => null),
-        messageRepository.listRecent(20),
+        taskRepository.listByStatus('pending', 50, userId),
+        taskRepository.listByStatus('active', 50, userId),
+        killswitchService.getStatus(userId).catch(() => null),
+        messageRepository.listRecent(20, userId),
         pool.query(
           `SELECT ua.id, ua.account_type FROM user_accounts ua
            JOIN oauth_tokens ot ON ua.id = ot.account_id
-           WHERE ot.provider = 'google'`
+           WHERE ua.user_id = $1 AND ot.provider = 'google'`,
+          [userId]
         ),
       ]);
 
-      // Fetch calendar events for all connected accounts
       let calendarEvents: any[] = [];
       for (const account of accounts.rows) {
         try {
-          const events = await calendarEventRepository.findInRange(
-            account.id,
-            now,
-            weekFromNow
-          );
+          const events = await calendarEventRepository.findInRange(account.id, now, weekFromNow);
           calendarEvents.push(...events);
-        } catch {
-          // Skip accounts with errors
-        }
+        } catch { /* skip */ }
       }
 
-      // Sort events by start time
       calendarEvents.sort((a, b) =>
         new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
       );
@@ -107,26 +93,23 @@ class DashboardController {
     }
   }
 
-  /**
-   * GET /api/tasks - List tasks with optional filters
-   */
   async getTasks(req: Request, res: Response): Promise<void> {
     try {
+      const userId = req.user!.userId;
       const { status, category } = req.query;
       const limit = parseInt(req.query.limit as string) || 100;
 
       let tasks;
       if (status && typeof status === 'string') {
-        tasks = await taskRepository.listByStatus(status as any, limit);
+        tasks = await taskRepository.listByStatus(status as any, limit, userId);
       } else if (category && typeof category === 'string') {
-        tasks = await taskRepository.listByCategory(category as any, limit);
+        tasks = await taskRepository.listByCategory(category as string, limit, userId);
       } else {
-        // Get all non-rejected tasks; only show completed tasks from today
         const [pending, active, completedToday, deferred] = await Promise.all([
-          taskRepository.listByStatus('pending', limit),
-          taskRepository.listByStatus('active', limit),
-          taskRepository.listCompletedToday(limit),
-          taskRepository.listByStatus('deferred', limit),
+          taskRepository.listByStatus('pending', limit, userId),
+          taskRepository.listByStatus('active', limit, userId),
+          taskRepository.listCompletedToday(limit, userId),
+          taskRepository.listByStatus('deferred', limit, userId),
         ]);
         tasks = [...pending, ...active, ...deferred, ...completedToday];
       }
@@ -138,11 +121,9 @@ class DashboardController {
     }
   }
 
-  /**
-   * PATCH /api/tasks/:id/status - Update task status
-   */
   async updateTaskStatus(req: Request, res: Response): Promise<void> {
     try {
+      const userId = req.user!.userId;
       const { id } = req.params;
       const { status } = req.body;
 
@@ -152,7 +133,7 @@ class DashboardController {
       }
 
       const completedAt = status === 'completed' ? new Date() : undefined;
-      const task = await taskRepository.updateStatus(id, status, completedAt);
+      const task = await taskRepository.updateStatus(id, status, completedAt, userId);
 
       if (!task) {
         res.status(404).json({ error: 'Task not found' });
@@ -166,13 +147,11 @@ class DashboardController {
     }
   }
 
-  /**
-   * DELETE /api/tasks/:id - Delete a task
-   */
   async deleteTask(req: Request, res: Response): Promise<void> {
     try {
+      const userId = req.user!.userId;
       const { id } = req.params;
-      const deleted = await taskRepository.delete(id);
+      const deleted = await taskRepository.delete(id, userId);
 
       if (!deleted) {
         res.status(404).json({ error: 'Task not found' });
@@ -186,11 +165,9 @@ class DashboardController {
     }
   }
 
-  /**
-   * GET /api/calendar - Upcoming events
-   */
   async getCalendar(req: Request, res: Response): Promise<void> {
     try {
+      const userId = req.user!.userId;
       const days = parseInt(req.query.days as string) || 7;
       const now = new Date();
       const end = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
@@ -198,21 +175,16 @@ class DashboardController {
       const accounts = await pool.query(
         `SELECT ua.id, ua.account_type FROM user_accounts ua
          JOIN oauth_tokens ot ON ua.id = ot.account_id
-         WHERE ot.provider = 'google'`
+         WHERE ua.user_id = $1 AND ot.provider = 'google'`,
+        [userId]
       );
 
       let events: any[] = [];
       for (const account of accounts.rows) {
         try {
-          const accountEvents = await calendarEventRepository.findInRange(
-            account.id,
-            now,
-            end
-          );
+          const accountEvents = await calendarEventRepository.findInRange(account.id, now, end);
           events.push(...accountEvents.map(e => ({ ...e, account_type: account.account_type })));
-        } catch {
-          // Skip accounts with errors
-        }
+        } catch { /* skip */ }
       }
 
       events.sort((a, b) =>
@@ -226,13 +198,11 @@ class DashboardController {
     }
   }
 
-  /**
-   * GET /api/messages - Conversation history
-   */
   async getMessages(req: Request, res: Response): Promise<void> {
     try {
+      const userId = req.user!.userId;
       const limit = parseInt(req.query.limit as string) || 50;
-      const messages = await messageRepository.listRecent(limit);
+      const messages = await messageRepository.listRecent(limit, userId);
       res.json({ messages });
     } catch (error) {
       console.error('Messages error:', error);
@@ -240,19 +210,18 @@ class DashboardController {
     }
   }
 
-  /**
-   * GET /api/email-todos - Tasks created from email scanning
-   */
   async getEmailTodos(req: Request, res: Response): Promise<void> {
     try {
+      const userId = req.user!.userId;
       const limit = parseInt(req.query.limit as string) || 50;
       const result = await pool.query(
         `SELECT id, parsed_title, description, category, priority, status, due_date, created_at
          FROM tasks
          WHERE created_from_message_sid LIKE 'email-%'
+         AND user_id = $2
          ORDER BY created_at DESC
          LIMIT $1`,
-        [limit]
+        [limit, userId]
       );
       res.json({ todos: result.rows });
     } catch (error) {
@@ -261,12 +230,10 @@ class DashboardController {
     }
   }
 
-  /**
-   * GET /api/killswitch - Killswitch status
-   */
-  async getKillswitch(_req: Request, res: Response): Promise<void> {
+  async getKillswitch(req: Request, res: Response): Promise<void> {
     try {
-      const status = await killswitchService.getStatus();
+      const userId = req.user!.userId;
+      const status = await killswitchService.getStatus(userId);
       res.json(status);
     } catch (error) {
       console.error('Killswitch error:', error);

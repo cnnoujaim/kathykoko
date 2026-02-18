@@ -2,6 +2,7 @@ import { Router } from 'express';
 import smsRoutes from './sms.routes';
 import healthRoutes from './health.routes';
 import oauthRoutes from './oauth.routes';
+import authRoutes from './auth.routes';
 import calendarRoutes from './calendar.routes';
 import killswitchRoutes from './killswitch.routes';
 import emailRoutes from './email.routes';
@@ -11,6 +12,7 @@ import dashboardRoutes from './dashboard.routes';
 const router = Router();
 
 // Mount routes
+router.use('/auth', authRoutes);
 router.use('/webhooks/sms', smsRoutes);
 router.use('/health', healthRoutes);
 router.use('/oauth', oauthRoutes);
