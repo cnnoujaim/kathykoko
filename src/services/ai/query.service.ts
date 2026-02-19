@@ -10,7 +10,7 @@ export class QueryService {
   /**
    * Answer a natural language question using calendar + task context
    */
-  async answer(question: string, history: Array<{ role: 'user' | 'assistant'; content: string }> = [], mode: 'query' | 'conversation' = 'query'): Promise<string> {
+  async answer(question: string, history: Array<{ role: 'user' | 'assistant'; content: string }> = [], mode: 'query' | 'conversation' = 'query', userId?: string): Promise<string> {
     const now = new Date();
     const currentDateTime = now.toLocaleString('en-US', {
       timeZone: 'America/Los_Angeles',
@@ -25,10 +25,10 @@ export class QueryService {
 
     // Gather context in parallel
     const [upcomingEvents, pendingTasks, killswitchStatus, recentEmails] = await Promise.all([
-      this.getUpcomingEvents(),
-      this.getPendingTasks(),
+      this.getUpcomingEvents(userId),
+      this.getPendingTasks(userId),
       killswitchService.getStatus(),
-      this.getRecentEmails(),
+      this.getRecentEmails(userId),
     ]);
 
     const systemPrompt = mode === 'conversation'
@@ -71,18 +71,21 @@ USER: "${question}"`;
     return await claudeService.complete(prompt, systemPrompt, maxTokens);
   }
 
-  private async getUpcomingEvents(): Promise<string> {
+  private async getUpcomingEvents(userId?: string): Promise<string> {
     const now = new Date();
     const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const userFilter = userId ? ' AND ua.user_id = $3' : '';
+    const params = userId ? [now, weekFromNow, userId] : [now, weekFromNow];
 
     const result = await pool.query(
       `SELECT ce.title, ce.start_time, ce.end_time, ce.location, ce.event_type, ua.account_type
        FROM calendar_events ce
        JOIN user_accounts ua ON ce.account_id = ua.id
-       WHERE ce.start_time >= $1 AND ce.start_time < $2
+       WHERE ce.start_time >= $1 AND ce.start_time < $2${userFilter}
        ORDER BY ce.start_time ASC
        LIMIT 30`,
-      [now, weekFromNow]
+      params
     );
 
     if (result.rows.length === 0) return '';
@@ -98,15 +101,19 @@ USER: "${question}"`;
     }).join('\n');
   }
 
-  private async getPendingTasks(): Promise<string> {
+  private async getPendingTasks(userId?: string): Promise<string> {
+    const userFilter = userId ? ' AND user_id = $1' : '';
+    const params = userId ? [userId] : [];
+
     const result = await pool.query(
       `SELECT parsed_title, category, priority, due_date, estimated_hours, status
        FROM tasks
-       WHERE status IN ('pending', 'active', 'clarification_needed', 'deferred')
+       WHERE status IN ('pending', 'active', 'clarification_needed', 'deferred')${userFilter}
        ORDER BY
          CASE priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END,
          due_date ASC NULLS LAST
-       LIMIT 15`
+       LIMIT 15`,
+      params
     );
 
     if (result.rows.length === 0) return '';
@@ -117,16 +124,20 @@ USER: "${question}"`;
       return `- [${t.priority}] ${t.parsed_title} [${t.category}]${due}${hours} - ${t.status}`;
     }).join('\n');
   }
-  private async getRecentEmails(): Promise<string> {
+  private async getRecentEmails(userId?: string): Promise<string> {
+    const userFilter = userId ? ' AND ua.user_id = $1' : '';
+    const params = userId ? [userId] : [];
+
     const result = await pool.query(
       `SELECT e.from_address, e.subject, e.snippet, e.is_urgent, e.has_draft, e.is_read, ua.account_type,
               ed.persona as draft_persona, ed.status as draft_status
        FROM emails e
        JOIN user_accounts ua ON e.account_id = ua.id
        LEFT JOIN email_drafts ed ON e.draft_id = ed.id
-       WHERE e.received_at >= NOW() - INTERVAL '3 days'
+       WHERE e.received_at >= NOW() - INTERVAL '3 days'${userFilter}
        ORDER BY e.is_urgent DESC, e.received_at DESC
-       LIMIT 10`
+       LIMIT 10`,
+      params
     );
 
     if (result.rows.length === 0) return '';

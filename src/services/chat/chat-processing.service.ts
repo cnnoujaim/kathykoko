@@ -210,12 +210,12 @@ export async function processMessage(body: string, messageSid?: string, userId?:
   }
 
   if (messageType === 'query') {
-    const response = await queryService.answer(body, history);
+    const response = await queryService.answer(body, history, 'query', userId);
     return { response, messageType: 'query' };
   }
 
   if (messageType === 'conversation') {
-    const response = await queryService.answer(body, history, 'conversation');
+    const response = await queryService.answer(body, history, 'conversation', userId);
     return { response, messageType: 'conversation' };
   }
 
@@ -225,7 +225,7 @@ export async function processMessage(body: string, messageSid?: string, userId?:
   }
 
   if (messageType === 'email_scan') {
-    const response = await emailTodoService.scanAndReport();
+    const response = await emailTodoService.scanAndReport(userId);
     return { response, messageType: 'email_scan' };
   }
 

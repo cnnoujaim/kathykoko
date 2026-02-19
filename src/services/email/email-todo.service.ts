@@ -19,7 +19,7 @@ export class EmailTodoService {
    * Extract todos from a batch of emails and create tasks.
    * Skips emails that have already been processed for todos.
    */
-  async extractTodos(emails: Email[]): Promise<{ created: number; items: string[] }> {
+  async extractTodos(emails: Email[], userId?: string): Promise<{ created: number; items: string[] }> {
     let created = 0;
     const items: string[] = [];
 
@@ -30,6 +30,16 @@ export class EmailTodoService {
         [`email-${email.gmail_message_id}`]
       );
       if (existingTask.rows.length > 0) continue;
+
+      // Resolve user_id from the email's account if not provided
+      let resolvedUserId = userId;
+      if (!resolvedUserId && email.account_id) {
+        const userResult = await pool.query(
+          'SELECT user_id FROM user_accounts WHERE id = $1',
+          [email.account_id]
+        );
+        resolvedUserId = userResult.rows[0]?.user_id || undefined;
+      }
 
       try {
         const todos = await this.analyzeEmail(email);
@@ -62,6 +72,7 @@ export class EmailTodoService {
             status: 'pending',
             alignment_score: 0.7, // Email todos are generally relevant
             account_id: email.account_id,
+            user_id: resolvedUserId,
             created_from_message_sid: `email-${email.gmail_message_id}`,
           });
 
@@ -80,7 +91,7 @@ export class EmailTodoService {
   /**
    * Scan recent unprocessed emails and return a chat-friendly summary.
    */
-  async scanAndReport(): Promise<string> {
+  async scanAndReport(userId?: string): Promise<string> {
     // Get recent emails from last 3 days that haven't been processed for todos
     const recentEmails = await pool.query(
       `SELECT e.* FROM emails e
@@ -97,7 +108,7 @@ export class EmailTodoService {
       return "No new emails with action items. You're all caught up!";
     }
 
-    const result = await this.extractTodos(recentEmails.rows);
+    const result = await this.extractTodos(recentEmails.rows, userId);
 
     if (result.created === 0) {
       return "Scanned your recent emails — no new action items found.";
