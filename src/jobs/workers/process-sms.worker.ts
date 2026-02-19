@@ -1,4 +1,5 @@
 import { Job } from 'bull';
+import crypto from 'crypto';
 import { messageRepository } from '../../repositories/message.repository';
 import { smsService } from '../../services/sms/sms.service';
 import { chatProcessingService } from '../../services/chat/chat-processing.service';
@@ -31,10 +32,21 @@ async function processSMSWorker(job: Job<ProcessSMSJobData>) {
     const { response, messageType } = await chatProcessingService.processMessage(body, messageSid, userId);
     console.log(`📋 Message classified as: ${messageType}`);
 
-    // 3. Send response via SMS
+    // 3. Store outbound response in DB (so it shows in web UI)
+    await messageRepository.create({
+      message_sid: `sms-reply-${crypto.randomUUID()}`,
+      direction: 'outbound',
+      from_number: 'kathy',
+      to_number: from,
+      body: response,
+      status: 'processed',
+      user_id: userId,
+    });
+
+    // 4. Send response via SMS
     await smsService.sendSMS(from, response);
 
-    // 4. Update message status to 'processed'
+    // 5. Update inbound message status to 'processed'
     await messageRepository.updateStatus(messageSid, 'processed');
 
     console.log(`✓ SMS processing complete for ${messageSid}`);
