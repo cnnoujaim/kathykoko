@@ -15,7 +15,7 @@ import { goalMilestoneRepository } from '../../repositories/goal-milestone.repos
 import { embeddingsService } from '../ai/embeddings.service';
 import { pool } from '../../config/database';
 
-export type MessageType = 'query' | 'task' | 'killswitch' | 'action' | 'checkin' | 'email_scan' | 'goals';
+export type MessageType = 'query' | 'task' | 'killswitch' | 'action' | 'checkin' | 'email_scan' | 'goals' | 'conversation';
 
 export interface ChatResponse {
   response: string;
@@ -77,6 +77,27 @@ export async function classifyMessage(body: string, history: Array<{ role: 'user
     return 'action';
   }
 
+  // Fast path: brainstorming / conversation
+  if (
+    lower.includes('brainstorm') ||
+    lower.includes('ideas for') ||
+    lower.includes('help me think') ||
+    lower.includes('let\'s think') ||
+    lower.includes('let\'s discuss') ||
+    lower.includes('what do you think') ||
+    lower.includes('what would you suggest') ||
+    lower.includes('any suggestions') ||
+    lower.includes('give me ideas') ||
+    lower.includes('pros and cons') ||
+    lower.includes('help me decide') ||
+    lower.includes('better way to') ||
+    lower.includes('advice on') ||
+    lower.includes('how should i approach') ||
+    lower.includes('let\'s plan')
+  ) {
+    return 'conversation';
+  }
+
   // Fast path: obvious questions
   if (
     lower.startsWith('what') ||
@@ -102,18 +123,19 @@ export async function classifyMessage(body: string, history: Array<{ role: 'user
       ? `\nRECENT CONVERSATION:\n${history.slice(-6).map(m => `${m.role}: ${m.content}`).join('\n')}\n`
       : '';
 
-    const classification = await claudeService.completeJSON<{ type: 'query' | 'task' | 'action' | 'goals' }>(
+    const classification = await claudeService.completeJSON<{ type: 'query' | 'task' | 'action' | 'goals' | 'conversation' }>(
       `Classify this message into one of these types:
-- "query": asking a question about schedule, calendar, tasks, or status, or continuing a conversation
+- "query": asking a factual question about schedule, calendar, tasks, or status
+- "conversation": brainstorming, discussing ideas, asking for advice or suggestions, general discussion, thinking through a problem together
 - "task": requesting to create something new (a new task, reminder, etc.)
 - "action": managing an existing task or calendar event (mark done, delete, edit, reschedule, cancel, reprioritize)
 - "goals": setting up, describing, or discussing goals
 ${historyContext}
 MESSAGE: "${body}"
 
-Consider the conversation context when classifying. For example, "yes" after a question about goals should be "goals", and a follow-up to a query should be "query".
+Consider the conversation context when classifying. For example, "yes" after a question about goals should be "goals", a follow-up to a brainstorm should be "conversation", and a factual question should be "query".
 
-Return JSON: {"type": "query"} or {"type": "task"} or {"type": "action"} or {"type": "goals"}`,
+Return JSON: {"type": "query"} or {"type": "conversation"} or {"type": "task"} or {"type": "action"} or {"type": "goals"}`,
       'You classify messages. Return only valid JSON.',
       64
     );
@@ -190,6 +212,11 @@ export async function processMessage(body: string, messageSid?: string, userId?:
   if (messageType === 'query') {
     const response = await queryService.answer(body, history);
     return { response, messageType: 'query' };
+  }
+
+  if (messageType === 'conversation') {
+    const response = await queryService.answer(body, history, 'conversation');
+    return { response, messageType: 'conversation' };
   }
 
   if (messageType === 'action') {

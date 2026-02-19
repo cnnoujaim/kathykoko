@@ -747,8 +747,8 @@
             : '';
           var priorityLabel = goal.priority === 1 ? 'P1' : goal.priority === 2 ? 'P2' : 'P3';
 
-          html += '<div class="goal-card">' +
-            '<div class="goal-header">' +
+          html += '<div class="goal-card" data-goal-id="' + goal.id + '" data-goal-priority="' + goal.priority + '" data-goal-category="' + escapeHtml(goal.category) + '">' +
+            '<div class="goal-header" style="cursor:pointer">' +
               '<div class="goal-title">' + escapeHtml(goal.title) + '</div>' +
               '<span class="goal-priority p' + goal.priority + '">' + priorityLabel + '</span>' +
             '</div>' +
@@ -819,6 +819,85 @@
         btn.addEventListener('click', async function () {
           await fetch(API + '/api/goals/' + btn.dataset.id, { method: 'DELETE' });
           loadGoals(true);
+        });
+      });
+
+      // Bind goal header click → toggle edit panel
+      content.querySelectorAll('.goal-header').forEach(function (header) {
+        header.addEventListener('click', function () {
+          var card = header.closest('.goal-card');
+          var existing = card.querySelector('.goal-edit-panel');
+          if (existing) {
+            existing.remove();
+            return;
+          }
+          // Close other open panels
+          content.querySelectorAll('.goal-edit-panel').forEach(function (p) { p.remove(); });
+
+          var goalId = card.dataset.goalId;
+          var currentPriority = parseInt(card.dataset.goalPriority);
+          var currentCategory = card.dataset.goalCategory;
+
+          var panel = document.createElement('div');
+          panel.className = 'goal-edit-panel';
+
+          // Priority pills
+          var priHtml = '<div class="edit-row"><span class="edit-label">Priority</span><div class="edit-pills">';
+          [1, 2, 3].forEach(function (p) {
+            var active = currentPriority === p ? ' active' : '';
+            priHtml += '<button class="edit-pill goal-pri-pill p' + p + active + '" data-value="' + p + '">P' + p + '</button>';
+          });
+          priHtml += '</div></div>';
+
+          // Category pills
+          var catHtml = '<div class="edit-row"><span class="edit-label">Category</span><div class="edit-pills">';
+          userCategories.forEach(function (cat) {
+            var active = currentCategory === cat.name ? ' active' : '';
+            var dot = cat.color ? '<span class="cat-dot" style="background:' + cat.color + '"></span>' : '';
+            catHtml += '<button class="edit-pill goal-cat-pill' + active + '" data-value="' + cat.name + '">' + dot + cat.name + '</button>';
+          });
+          catHtml += '</div></div>';
+
+          panel.innerHTML = priHtml + catHtml;
+          header.after(panel);
+
+          // Bind priority pill clicks
+          panel.querySelectorAll('.goal-pri-pill').forEach(function (pill) {
+            pill.addEventListener('click', async function () {
+              var val = parseInt(pill.dataset.value);
+              panel.querySelectorAll('.goal-pri-pill').forEach(function (p) { p.classList.remove('active'); });
+              pill.classList.add('active');
+              card.dataset.goalPriority = val;
+              await fetch(API + '/api/goals/' + goalId, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ priority: val }),
+              });
+              // Update the priority badge in the header
+              var badge = card.querySelector('.goal-priority');
+              if (badge) {
+                badge.className = 'goal-priority p' + val;
+                badge.textContent = 'P' + val;
+              }
+            });
+          });
+
+          // Bind category pill clicks
+          panel.querySelectorAll('.goal-cat-pill').forEach(function (pill) {
+            pill.addEventListener('click', async function () {
+              var val = pill.dataset.value;
+              panel.querySelectorAll('.goal-cat-pill').forEach(function (p) { p.classList.remove('active'); });
+              pill.classList.add('active');
+              card.dataset.goalCategory = val;
+              await fetch(API + '/api/goals/' + goalId, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ category: val }),
+              });
+              // Reload to move goal to new category section
+              loadGoals(true);
+            });
+          });
         });
       });
     } catch (err) {

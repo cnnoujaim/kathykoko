@@ -10,7 +10,7 @@ export class QueryService {
   /**
    * Answer a natural language question using calendar + task context
    */
-  async answer(question: string, history: Array<{ role: 'user' | 'assistant'; content: string }> = []): Promise<string> {
+  async answer(question: string, history: Array<{ role: 'user' | 'assistant'; content: string }> = [], mode: 'query' | 'conversation' = 'query'): Promise<string> {
     const now = new Date();
     const currentDateTime = now.toLocaleString('en-US', {
       timeZone: 'America/Los_Angeles',
@@ -31,10 +31,18 @@ export class QueryService {
       this.getRecentEmails(),
     ]);
 
-    const systemPrompt = `You are Kathy Koko, a sharp personal assistant for a musician/software engineer.
+    const systemPrompt = mode === 'conversation'
+      ? `You are Kathy Koko, a thoughtful AI Chief of Staff and brainstorming partner.
+Help the user think through problems, brainstorm ideas, suggest better ways to manage their time, tasks, and schedule.
+Be a real thought partner — offer structured options, pros/cons, creative suggestions, and actionable next steps.
+You have access to their real calendar, tasks, and emails, so reference specific items when relevant.
+Be warm, practical, and detailed. Use numbered lists or bullet points when suggesting multiple options.`
+      : `You are Kathy Koko, a sharp personal assistant for a musician/software engineer.
 You answer questions about her schedule, tasks, calendar, and emails concisely via SMS.
 Keep responses under 300 characters when possible. Be direct, warm, and practical.
 Use simple formatting (no markdown). You can use emojis sparingly.`;
+
+    const maxTokens = mode === 'conversation' ? 1024 : 512;
 
     const prompt = `CURRENT DATE/TIME: ${currentDateTime} (Pacific Time)
 
@@ -49,9 +57,7 @@ ${recentEmails || 'No urgent emails.'}
 
 LYRA WORK HOURS: ${killswitchStatus.currentHours}/40 this week${killswitchStatus.isActive ? ' (KILLSWITCH ACTIVE)' : ` (${killswitchStatus.remainingHours} remaining)`}
 
-USER QUESTION: "${question}"
-
-Answer the question based on the context above. Be concise (SMS format). If you don't have enough info, say so honestly.`;
+USER: "${question}"`;
 
     // Use multi-turn chat if we have conversation history
     if (history.length > 0) {
@@ -59,10 +65,10 @@ Answer the question based on the context above. Be concise (SMS format). If you 
         ...history.slice(-10),
         { role: 'user' as const, content: prompt },
       ];
-      return await claudeService.chat(messages, systemPrompt, 512);
+      return await claudeService.chat(messages, systemPrompt, maxTokens);
     }
 
-    return await claudeService.complete(prompt, systemPrompt, 512);
+    return await claudeService.complete(prompt, systemPrompt, maxTokens);
   }
 
   private async getUpcomingEvents(): Promise<string> {
