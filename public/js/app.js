@@ -62,6 +62,18 @@
         container.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
         pill.classList.add('active');
         currentFilter = pill.dataset.filter;
+
+        // Hide "Category" group pill when filtering by a specific category
+        var catGroupPill = document.querySelector('.group-pill[data-group="category"]');
+        if (catGroupPill) {
+          catGroupPill.style.display = (currentFilter !== 'all') ? 'none' : '';
+          if (currentFilter !== 'all' && currentGrouping === 'category') {
+            currentGrouping = 'status';
+            document.getElementById('task-grouping').querySelectorAll('.group-pill').forEach(function (p) { p.classList.remove('active'); });
+            document.querySelector('.group-pill[data-group="status"]').classList.add('active');
+          }
+        }
+
         loadTasks();
       });
     });
@@ -203,7 +215,125 @@
   // ---- Tasks ----
   const taskList = document.getElementById('task-list');
   let currentFilter = 'all';
+  var currentGrouping = 'status';
   let tasksData = []; // store for edit panel reference
+
+  // Grouping configurations
+  var groupConfigs = {
+    status: {
+      key: function (task) {
+        if (task.status === 'pending' || task.status === 'active') return 'active';
+        return task.status;
+      },
+      order: ['active', 'clarification_needed', 'deferred', 'completed'],
+      labels: { active: 'Active', clarification_needed: 'Needs Clarification', deferred: 'Deferred', completed: 'Completed' },
+      colors: { active: '#b8c0ff', clarification_needed: '#fde68a', deferred: '#d4cade', completed: '#c8b6ff' }
+    },
+    priority: {
+      key: function (task) { return task.priority || 'none'; },
+      order: ['urgent', 'high', 'medium', 'low', 'none'],
+      labels: { urgent: 'Urgent', high: 'High', medium: 'Medium', low: 'Low', none: 'No Priority' },
+      colors: { urgent: '#ff8fab', high: '#ffb3c6', medium: '#bbd0ff', low: '#c8b6ff', none: '#d4cade' }
+    },
+    due: {
+      key: function (task) {
+        if (!task.due_date) return 'none';
+        var now = new Date();
+        now.setHours(0, 0, 0, 0);
+        var due = new Date(task.due_date);
+        due.setHours(0, 0, 0, 0);
+        var diffDays = Math.floor((due - now) / 86400000);
+        if (diffDays < 0) return 'overdue';
+        if (diffDays === 0) return 'today';
+        if (diffDays <= 7) return 'week';
+        return 'later';
+      },
+      order: ['overdue', 'today', 'week', 'later', 'none'],
+      labels: { overdue: 'Overdue', today: 'Today', week: 'This Week', later: 'Later', none: 'No Due Date' },
+      colors: { overdue: '#ff8fab', today: '#ffb3c6', week: '#bbd0ff', later: '#c8b6ff', none: '#d4cade' }
+    },
+    category: {
+      key: function (task) { return task.category || 'uncategorized'; },
+      order: null,
+      labels: null,
+      colors: null
+    }
+  };
+
+  function groupTasks(tasks, groupType) {
+    var config = groupConfigs[groupType];
+    var groups = {};
+
+    tasks.forEach(function (task) {
+      var groupKey = config.key(task);
+      if (!groups[groupKey]) groups[groupKey] = [];
+      groups[groupKey].push(task);
+    });
+
+    var order;
+    if (config.order) {
+      order = config.order.filter(function (k) { return groups[k] && groups[k].length > 0; });
+    } else {
+      order = userCategories.map(function (c) { return c.name; }).filter(function (k) { return groups[k]; });
+      if (groups['uncategorized']) order.push('uncategorized');
+    }
+
+    return order.map(function (key) {
+      var label = config.labels ? config.labels[key] : (key === 'uncategorized' ? 'Uncategorized' : key.charAt(0).toUpperCase() + key.slice(1));
+      var color = config.colors ? config.colors[key] : getCategoryColor(key);
+      return { key: key, label: label, color: color, tasks: groups[key] };
+    });
+  }
+
+  function renderGroupedTasks(groups) {
+    taskList.innerHTML = '';
+
+    groups.forEach(function (group) {
+      var section = document.createElement('div');
+      section.className = 'task-group';
+      section.dataset.group = group.key;
+
+      var header = document.createElement('div');
+      header.className = 'task-group-header';
+      header.innerHTML =
+        '<span class="task-group-chevron">&#9660;</span>' +
+        '<span class="task-group-dot" style="background:' + group.color + '"></span>' +
+        '<span class="task-group-name">' + escapeHtml(group.label) + '</span>' +
+        '<span class="task-group-count">' + group.tasks.length + '</span>';
+
+      header.addEventListener('click', function () {
+        section.classList.toggle('collapsed');
+      });
+
+      var cards = document.createElement('div');
+      cards.className = 'task-group-cards';
+
+      group.tasks.forEach(function (task) {
+        var card = buildTaskCard(task);
+        cards.appendChild(card);
+        bindTaskCardHandlers(card, task);
+      });
+
+      section.appendChild(header);
+      section.appendChild(cards);
+      taskList.appendChild(section);
+    });
+  }
+
+  function initGroupingPills() {
+    var container = document.getElementById('task-grouping');
+    container.querySelectorAll('.group-pill').forEach(function (pill) {
+      pill.addEventListener('click', function () {
+        container.querySelectorAll('.group-pill').forEach(function (p) { p.classList.remove('active'); });
+        pill.classList.add('active');
+        currentGrouping = pill.dataset.group;
+        if (tasksData.length > 0) {
+          var groups = groupTasks(tasksData, currentGrouping);
+          renderGroupedTasks(groups);
+        }
+      });
+    });
+  }
 
   function buildTaskCard(task) {
     const card = document.createElement('div');
@@ -399,11 +529,8 @@
 
       tasksData = sorted;
 
-      sorted.forEach(task => {
-        const card = buildTaskCard(task);
-        taskList.appendChild(card);
-        bindTaskCardHandlers(card, task);
-      });
+      var groups = groupTasks(sorted, currentGrouping);
+      renderGroupedTasks(groups);
     } catch {
       taskList.innerHTML = '<div class="empty-state">Failed to load tasks</div>';
     }
@@ -1141,6 +1268,7 @@
     if (!authData) return; // redirected to login
 
     loadMessages();
+    initGroupingPills();
     loadTasks();
 
     // Load sidebar killswitch

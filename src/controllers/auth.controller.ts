@@ -186,16 +186,30 @@ class AuthController {
         [user.id]
       );
 
-      // Get connected accounts (include phone_number)
-      const accounts = await pool.query(
-        `SELECT ua.id, ua.email, ua.account_type, ua.is_primary, ua.phone_number,
-                CASE WHEN ot.id IS NOT NULL THEN true ELSE false END as has_oauth
-         FROM user_accounts ua
-         LEFT JOIN oauth_tokens ot ON ua.id = ot.account_id
-         WHERE ua.user_id = $1
-         ORDER BY ua.is_primary DESC, ua.created_at ASC`,
-        [user.id]
-      );
+      // Get connected accounts (include phone_number if column exists)
+      let accounts;
+      try {
+        accounts = await pool.query(
+          `SELECT ua.id, ua.email, ua.account_type, ua.is_primary, ua.phone_number,
+                  CASE WHEN ot.id IS NOT NULL THEN true ELSE false END as has_oauth
+           FROM user_accounts ua
+           LEFT JOIN oauth_tokens ot ON ua.id = ot.account_id
+           WHERE ua.user_id = $1
+           ORDER BY ua.is_primary DESC, ua.created_at ASC`,
+          [user.id]
+        );
+      } catch {
+        // phone_number column may not exist yet (pre-migration 014)
+        accounts = await pool.query(
+          `SELECT ua.id, ua.email, ua.account_type, ua.is_primary, NULL as phone_number,
+                  CASE WHEN ot.id IS NOT NULL THEN true ELSE false END as has_oauth
+           FROM user_accounts ua
+           LEFT JOIN oauth_tokens ot ON ua.id = ot.account_id
+           WHERE ua.user_id = $1
+           ORDER BY ua.is_primary DESC, ua.created_at ASC`,
+          [user.id]
+        );
+      }
 
       res.json({
         user: {

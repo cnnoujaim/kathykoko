@@ -45,30 +45,34 @@ export class UserRepository {
    */
   async findByPhoneWithAccount(phone: string): Promise<{ user: UserRow; accountId: string | null; accountType: string | null } | null> {
     // First try user_accounts.phone_number for account-level match
-    const accountMatch = await pool.query(
-      `SELECT u.*, ua.id as account_id, ua.account_type
-       FROM user_accounts ua
-       JOIN users u ON ua.user_id = u.id
-       WHERE ua.phone_number = $1
-       LIMIT 1`,
-      [phone]
-    );
+    try {
+      const accountMatch = await pool.query(
+        `SELECT u.*, ua.id as account_id, ua.account_type
+         FROM user_accounts ua
+         JOIN users u ON ua.user_id = u.id
+         WHERE ua.phone_number = $1
+         LIMIT 1`,
+        [phone]
+      );
 
-    if (accountMatch.rows.length > 0) {
-      const row = accountMatch.rows[0];
-      return {
-        user: {
-          id: row.id,
-          email: row.email,
-          name: row.name,
-          avatar_url: row.avatar_url,
-          phone_number: row.phone_number,
-          created_at: row.created_at,
-          updated_at: row.updated_at,
-        },
-        accountId: row.account_id,
-        accountType: row.account_type,
-      };
+      if (accountMatch.rows.length > 0) {
+        const row = accountMatch.rows[0];
+        return {
+          user: {
+            id: row.id,
+            email: row.email,
+            name: row.name,
+            avatar_url: row.avatar_url,
+            phone_number: row.phone_number,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+          },
+          accountId: row.account_id,
+          accountType: row.account_type,
+        };
+      }
+    } catch {
+      // phone_number column may not exist yet (pre-migration 014)
     }
 
     // Fall back to users.phone_number

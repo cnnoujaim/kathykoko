@@ -76,10 +76,21 @@
       <section id="panel-right" class="panel">
         <!-- Tasks View -->
         <div id="view-tasks" class="panel-view active">
-          <div class="panel-header">
-            <h2>Tasks</h2>
-            <div id="task-filters">
-              <button class="filter-pill active" data-filter="all">All</button>
+          <div class="panel-header task-panel-header">
+            <div class="task-header-top">
+              <h2>Tasks</h2>
+              <div id="task-filters">
+                <button class="filter-pill active" data-filter="all">All</button>
+              </div>
+            </div>
+            <div class="task-header-bottom">
+              <span class="group-label">Group by</span>
+              <div id="task-grouping" class="group-pills">
+                <button class="group-pill active" data-group="status">Status</button>
+                <button class="group-pill" data-group="priority">Priority</button>
+                <button class="group-pill" data-group="due">Due Date</button>
+                <button class="group-pill" data-group="category">Category</button>
+              </div>
             </div>
           </div>
           <div id="task-list" class="panel-body"></div>
