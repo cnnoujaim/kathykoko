@@ -195,6 +195,27 @@ class GoalController {
   }
 
   /**
+   * PATCH /api/goals/milestones/:id — Update milestone title
+   */
+  async updateMilestone(req: Request, res: Response): Promise<void> {
+    try {
+      const { title } = req.body;
+      if (!title || typeof title !== 'string') {
+        res.status(400).json({ error: 'Title is required' });
+        return;
+      }
+      const milestone = await goalMilestoneRepository.updateTitle(req.params.id, title.trim());
+      if (!milestone) {
+        res.status(404).json({ error: 'Milestone not found' });
+        return;
+      }
+      res.json({ milestone });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to update milestone' });
+    }
+  }
+
+  /**
    * POST /api/goals/generate — AI generates goals from user description
    */
   async generate(req: Request, res: Response): Promise<void> {

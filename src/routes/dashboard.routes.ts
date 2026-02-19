@@ -34,5 +34,6 @@ router.put('/goals/:id', (req, res) => goalController.update(req, res));
 router.delete('/goals/:id', (req, res) => goalController.remove(req, res));
 router.post('/goals/:id/milestones', (req, res) => goalController.addMilestone(req, res));
 router.patch('/goals/milestones/:id/toggle', (req, res) => goalController.toggleMilestone(req, res));
+router.patch('/goals/milestones/:id', (req, res) => goalController.updateMilestone(req, res));
 
 export default router;

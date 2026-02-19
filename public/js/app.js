@@ -766,7 +766,7 @@
             goal.milestones.forEach(function (m) {
               html += '<div class="milestone-item' + (m.is_completed ? ' completed' : '') + '">' +
                 '<div class="milestone-check" data-id="' + m.id + '"></div>' +
-                '<span>' + escapeHtml(m.title) + '</span>' +
+                '<span class="milestone-title" data-id="' + m.id + '">' + escapeHtml(m.title) + '</span>' +
                 '</div>';
             });
             html += '</div>';
@@ -797,6 +797,46 @@
         el.addEventListener('click', async function () {
           await fetch(API + '/api/goals/milestones/' + el.dataset.id + '/toggle', { method: 'PATCH' });
           loadGoals(true);
+        });
+      });
+
+      // Bind milestone double-click to edit
+      content.querySelectorAll('.milestone-title').forEach(function (span) {
+        span.addEventListener('dblclick', function (e) {
+          e.stopPropagation();
+          if (span.querySelector('input')) return; // already editing
+
+          var currentText = span.textContent;
+          var milestoneId = span.dataset.id;
+          var input = document.createElement('input');
+          input.type = 'text';
+          input.className = 'milestone-edit-input';
+          input.value = currentText;
+
+          span.textContent = '';
+          span.appendChild(input);
+          input.focus();
+          input.select();
+
+          async function save() {
+            var newText = input.value.trim();
+            if (newText && newText !== currentText) {
+              await fetch(API + '/api/goals/milestones/' + milestoneId, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: newText }),
+              });
+              span.textContent = newText;
+            } else {
+              span.textContent = currentText;
+            }
+          }
+
+          input.addEventListener('blur', save);
+          input.addEventListener('keydown', function (ev) {
+            if (ev.key === 'Enter') { input.blur(); }
+            if (ev.key === 'Escape') { input.value = currentText; input.blur(); }
+          });
         });
       });
 

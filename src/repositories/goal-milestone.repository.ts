@@ -48,6 +48,14 @@ export class GoalMilestoneRepository {
     return result.rows[0] || null;
   }
 
+  async updateTitle(id: string, title: string): Promise<GoalMilestone | null> {
+    const result = await pool.query(
+      'UPDATE goal_milestones SET title = $2 WHERE id = $1 RETURNING *',
+      [id, title]
+    );
+    return result.rows[0] || null;
+  }
+
   async delete(id: string): Promise<boolean> {
     const result = await pool.query('DELETE FROM goal_milestones WHERE id = $1', [id]);
     return (result.rowCount ?? 0) > 0;
