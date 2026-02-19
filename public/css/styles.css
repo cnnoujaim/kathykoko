@@ -1553,15 +1553,61 @@ html, body {
   background: var(--accent-dark);
 }
 
-.category-add, .phone-setting {
+.settings-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: -4px 0 8px;
+}
+
+.account-card {
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.account-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.account-email {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.account-phone {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.account-phone-input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: 'Nunito', sans-serif;
+  font-size: 12px;
+  background: var(--surface);
+}
+
+.account-phone .settings-btn {
+  margin-top: 0;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.category-add {
   display: flex;
   gap: 8px;
   align-items: center;
   margin-top: 8px;
 }
 
-.category-add input[type="text"],
-.phone-setting input[type="tel"] {
+.category-add input[type="text"] {
   flex: 1;
   padding: 8px 12px;
   border: 1px solid var(--border);

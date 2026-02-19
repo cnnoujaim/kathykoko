@@ -1044,77 +1044,88 @@
   // ---- Settings ----
   async function loadSettings() {
     try {
-      const res = await fetch(API + '/auth/me');
-      const data = await res.json();
+      var res = await fetch(API + '/auth/me');
+      var data = await res.json();
 
-      // Accounts list
-      const accountsList = document.getElementById('accounts-list');
+      // Accounts list with per-account phone numbers
+      var accountsList = document.getElementById('accounts-list');
       if (data.accounts && data.accounts.length > 0) {
-        accountsList.innerHTML = data.accounts.map(a =>
-          '<div class="settings-item">' +
-            '<span>' + escapeHtml(a.email) + '</span>' +
-            '<span class="settings-badge">' + a.account_type + (a.is_primary ? ' (primary)' : '') + '</span>' +
-          '</div>'
-        ).join('');
+        accountsList.innerHTML = data.accounts.map(function (a) {
+          return '<div class="account-card" data-id="' + a.id + '">' +
+            '<div class="account-info">' +
+              '<span class="account-email">' + escapeHtml(a.email) + '</span>' +
+              '<span class="settings-badge">' + a.account_type + (a.is_primary ? ' (primary)' : '') + '</span>' +
+            '</div>' +
+            '<div class="account-phone">' +
+              '<input type="tel" class="account-phone-input" placeholder="+1234567890" value="' + (a.phone_number || '') + '" data-id="' + a.id + '" autocomplete="off">' +
+              '<button class="save-account-phone-btn settings-btn" data-id="' + a.id + '">Save</button>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+
+        // Wire up per-account phone save buttons
+        accountsList.querySelectorAll('.save-account-phone-btn').forEach(function (btn) {
+          btn.addEventListener('click', async function () {
+            var accountId = btn.dataset.id;
+            var input = accountsList.querySelector('.account-phone-input[data-id="' + accountId + '"]');
+            var phone = input.value.trim();
+            var resp = await fetch(API + '/api/accounts/' + accountId + '/phone', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ phone_number: phone || null }),
+            });
+            if (resp.ok) {
+              btn.textContent = 'Saved!';
+              setTimeout(function () { btn.textContent = 'Save'; }, 1500);
+            }
+          });
+        });
       } else {
         accountsList.innerHTML = '<div class="empty-state">No accounts connected</div>';
       }
 
       // Categories list
-      const categoriesList = document.getElementById('categories-list');
+      var categoriesList = document.getElementById('categories-list');
       if (data.categories && data.categories.length > 0) {
-        categoriesList.innerHTML = data.categories.map(c =>
-          '<div class="settings-item">' +
+        categoriesList.innerHTML = data.categories.map(function (c) {
+          return '<div class="settings-item">' +
             '<span>' +
               (c.color ? '<span class="cat-dot" style="background:' + c.color + '"></span>' : '') +
               escapeHtml(c.name) +
               (c.is_default ? ' <em>(default)</em>' : '') +
             '</span>' +
             (!c.is_default ? '<button class="delete-cat-btn" data-id="' + c.id + '">&times;</button>' : '') +
-          '</div>'
-        ).join('');
+          '</div>';
+        }).join('');
 
-        categoriesList.querySelectorAll('.delete-cat-btn').forEach(btn => {
-          btn.addEventListener('click', async () => {
+        categoriesList.querySelectorAll('.delete-cat-btn').forEach(function (btn) {
+          btn.addEventListener('click', async function () {
             await fetch(API + '/api/categories/' + btn.dataset.id, { method: 'DELETE' });
             loadSettings();
-            const authData = await (await fetch(API + '/auth/me')).json();
+            var authData = await (await fetch(API + '/auth/me')).json();
             if (authData.categories) buildFilterPills(authData.categories);
           });
         });
       }
-
-      // Phone number
-      if (data.user && data.user.phone_number) {
-        document.getElementById('phone-number').value = data.user.phone_number;
-      }
-    } catch { /* ignore */ }
+    } catch (e) { /* ignore */ }
   }
 
   // Add category
-  document.getElementById('add-category-btn').addEventListener('click', async () => {
-    const name = document.getElementById('new-category-name').value.trim();
-    const color = document.getElementById('new-category-color').value;
+  document.getElementById('add-category-btn').addEventListener('click', async function () {
+    var name = document.getElementById('new-category-name').value.trim();
+    var color = document.getElementById('new-category-color').value;
     if (!name) return;
 
     await fetch(API + '/api/categories', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, color }),
+      body: JSON.stringify({ name: name, color: color }),
     });
 
     document.getElementById('new-category-name').value = '';
     loadSettings();
-    const authData = await (await fetch(API + '/auth/me')).json();
+    var authData = await (await fetch(API + '/auth/me')).json();
     if (authData.categories) buildFilterPills(authData.categories);
-  });
-
-  // Save phone
-  document.getElementById('save-phone-btn').addEventListener('click', async () => {
-    const phone = document.getElementById('phone-number').value.trim();
-    if (!phone) return;
-    // TODO: add phone update endpoint
-    alert('Phone number saved! (requires backend endpoint)');
   });
 
   // ---- Utilities ----

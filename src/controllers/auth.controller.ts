@@ -186,9 +186,9 @@ class AuthController {
         [user.id]
       );
 
-      // Get connected accounts
+      // Get connected accounts (include phone_number)
       const accounts = await pool.query(
-        `SELECT ua.id, ua.email, ua.account_type, ua.is_primary,
+        `SELECT ua.id, ua.email, ua.account_type, ua.is_primary, ua.phone_number,
                 CASE WHEN ot.id IS NOT NULL THEN true ELSE false END as has_oauth
          FROM user_accounts ua
          LEFT JOIN oauth_tokens ot ON ua.id = ot.account_id

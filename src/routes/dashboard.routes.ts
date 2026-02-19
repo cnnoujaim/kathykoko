@@ -19,6 +19,7 @@ router.get('/calendar', (req, res) => dashboardController.getCalendar(req, res))
 router.get('/messages', (req, res) => dashboardController.getMessages(req, res));
 router.get('/email-todos', (req, res) => dashboardController.getEmailTodos(req, res));
 router.get('/killswitch', (req, res) => dashboardController.getKillswitch(req, res));
+router.patch('/accounts/:id/phone', (req, res) => dashboardController.updateAccountPhone(req, res));
 
 // Category CRUD
 router.get('/categories', (req, res) => categoryController.list(req, res));

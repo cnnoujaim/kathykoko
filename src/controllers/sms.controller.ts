@@ -24,9 +24,11 @@ export class SMSController {
         return;
       }
 
-      // 2. Look up user by phone number
-      const user = await userRepository.findByPhoneNumber(From);
-      const userId = user?.id;
+      // 2. Look up user + account by phone number
+      const match = await userRepository.findByPhoneWithAccount(From);
+      const userId = match?.user.id;
+      const accountId = match?.accountId || undefined;
+      const accountType = match?.accountType || undefined;
 
       // 3. Store message
       await messageRepository.create({
@@ -48,12 +50,18 @@ export class SMSController {
         return;
       }
 
+      if (accountType) {
+        console.log(`📱 Matched to account: ${accountType} (${accountId})`);
+      }
+
       // 4. Enqueue async processing job
       await smsQueue.add('process-sms', {
         messageSid: MessageSid,
         from: From,
         body: Body,
         userId: userId,
+        accountId: accountId,
+        accountType: accountType,
       });
 
       // 5. Return TwiML response immediately

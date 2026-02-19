@@ -277,6 +277,53 @@ class DashboardController {
     }
   }
 
+  async updateAccountPhone(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+      const { id } = req.params;
+      const { phone_number } = req.body;
+
+      if (phone_number !== null && phone_number !== undefined && typeof phone_number !== 'string') {
+        res.status(400).json({ error: 'Invalid phone number' });
+        return;
+      }
+
+      const phone = phone_number ? phone_number.trim() : null;
+
+      // Verify account belongs to user
+      const account = await pool.query(
+        'SELECT id FROM user_accounts WHERE id = $1 AND user_id = $2',
+        [id, userId]
+      );
+      if (account.rows.length === 0) {
+        res.status(404).json({ error: 'Account not found' });
+        return;
+      }
+
+      await pool.query(
+        'UPDATE user_accounts SET phone_number = $1, updated_at = NOW() WHERE id = $2',
+        [phone, id]
+      );
+
+      // Also update users.phone_number with the primary account's phone for backward compat
+      const primary = await pool.query(
+        'SELECT phone_number FROM user_accounts WHERE user_id = $1 AND is_primary = true',
+        [userId]
+      );
+      if (primary.rows.length > 0) {
+        await pool.query(
+          'UPDATE users SET phone_number = $1, updated_at = NOW() WHERE id = $2',
+          [primary.rows[0].phone_number, userId]
+        );
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Update account phone error:', error);
+      res.status(500).json({ error: 'Failed to update phone number' });
+    }
+  }
+
   async getKillswitch(req: Request, res: Response): Promise<void> {
     try {
       const userId = req.user!.userId;

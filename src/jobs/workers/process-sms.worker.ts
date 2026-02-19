@@ -9,6 +9,8 @@ interface ProcessSMSJobData {
   from: string;
   body: string;
   userId?: string;
+  accountId?: string;
+  accountType?: string;
 }
 
 /**
@@ -17,9 +19,9 @@ interface ProcessSMSJobData {
  * then sends the response via SMS.
  */
 async function processSMSWorker(job: Job<ProcessSMSJobData>) {
-  const { messageSid, from, body, userId } = job.data;
+  const { messageSid, from, body, userId, accountId, accountType } = job.data;
 
-  console.log(`🔄 Processing SMS job ${job.id} for message ${messageSid}`);
+  console.log(`🔄 Processing SMS job ${job.id} for message ${messageSid}${accountType ? ` [${accountType}]` : ''}`);
 
   try {
     // 1. Update message status to 'processing'
