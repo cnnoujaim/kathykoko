@@ -11,7 +11,6 @@ export function validateTwilioRequest(
 ): void {
   // Skip validation in development mode (for ngrok testing)
   if (process.env.NODE_ENV === 'development') {
-    console.log('⚠️  Skipping Twilio signature validation (development mode)');
     next();
     return;
   }
